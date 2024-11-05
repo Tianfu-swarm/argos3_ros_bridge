@@ -1,5 +1,6 @@
 # argos3_ros_bridge
-argos3_ros_bridge is a package designed to integrate the ARGoS3 simulation environment with ROS (Robot Operating System). It provides a bridge that enables users to create and control robots in ARGoS3 while leveraging the powerful features and ecosystem of ROS. This package aims to offer a flexible and efficient solution for robotic research and development.
+argos3_ros_bridge is a package designed to integrate the ARGoS3 simulation environment with ROS (Robot Operating System). 
+It provides a bridge that enables users to create and control robots in ARGoS3 while leveraging the powerful features and ecosystem of ROS. This package aims to offer a flexible and efficient solution for robotic research and development.
 
 # What's ARGoS
 
