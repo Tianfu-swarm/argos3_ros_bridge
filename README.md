@@ -14,7 +14,7 @@ To install argos3_ros_bridge, use the following commands:
 ```bash
 mkdir yours_ws/src
 cd yours_ws/src
-https://github.com/Tianfu-swarm/argos3_ros_bridge.git
+git clone https://github.com/Tianfu-swarm/argos3_ros_bridge.git
 cd ..
 colcon build
 ```
