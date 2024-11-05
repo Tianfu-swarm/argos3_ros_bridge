@@ -5,11 +5,9 @@ argos3_ros_bridge is a package designed to integrate the ARGoS3 simulation envir
 
 ARGoS is a physics-based simulator designed to simulate large-scale robot swarms. Benchmark results show that ARGoS can perform physics-accurate simulation involving thousands of robots in a fraction of real time. ARGoS' main features are:
 
-+Multi-threaded and deeply modular architecture, more flexible than any simulator with equivalent features;
-
-+The possibility to run multiple physics engines at the same time;
-
-+The possibility to divide the physical space in region, and assign different regions to different physics engines.
+- Multi-threaded and deeply modular architecture, more flexible than any simulator with equivalent features.
+- The possibility to run multiple physics engines at the same time.
+- The possibility to divide the physical space into regions and assign different regions to different physics engines.
 
 # Install
 To install argos3_ros_bridge, use the following commands:
