@@ -1,0 +1,12 @@
+controller:
+  ros__parameters:
+    broadcastTime: 1
+    commitmentUpdateTime: 5
+    pPerceiveLightSources: 0.0
+    commsType: 0
+    hardTurnOnAngleThreshold: 75.0
+    softTurnOnAngleThreshold: 10.0
+    noTurnOnAngleThreshold: 5.0
+    maxSpeed: 10.0
+    logDirectoryName: "/mnt"
+    experimentName: "10_ticks_per_second_75_thresh_0_perception"

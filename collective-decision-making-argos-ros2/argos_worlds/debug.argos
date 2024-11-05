@@ -1,0 +1,150 @@
+<?xml version="1.0" ?>
+<argos-configuration>
+
+  <!-- ************************* -->
+  <!-- * General configuration * -->
+  <!-- ************************* -->
+  <framework>
+    <system threads="0" />
+    <experiment length="0"
+                ticks_per_second="50"
+                random_seed="124" />
+  </framework>
+
+  <!-- *************** -->
+  <!-- * Controllers * -->
+  <!-- *************** -->
+  <controllers>
+
+    <argos_ros_bot_controller id="argos_ros_bot" library="libargos_ros_bot.so">
+      <actuators>
+        <differential_steering implementation="default" />
+        <range_and_bearing implementation="default" />
+        <leds                  implementation="default" medium="leds" />
+      </actuators>
+      <sensors>
+      	<footbot_proximity implementation="default"/>
+        <footbot_light                       implementation="rot_z_only" />
+        <colored_blob_omnidirectional_camera implementation="rot_z_only" medium="leds" show_rays="true" />
+        <positioning implementation="default" />
+        <range_and_bearing implementation="medium" medium="rab"/>
+
+      </sensors>
+      <params>
+        <wheel_turning hard_turn_angle_threshold="90"
+                       soft_turn_angle_threshold="70"
+                       no_turn_angle_threshold="10"
+                       max_speed="10" />
+        <flocking target_distance="75"
+                  gain="1000"
+                  exponent="2" />
+      </params>
+    </argos_ros_bot_controller>
+
+  </controllers>
+
+  <!-- *********************** -->
+  <!-- * Arena configuration * -->
+  <!-- *********************** -->
+  <arena size="10,40,2" center="0,0,0.5">
+  <box id="wall_north" size="10,0.1,0.5" movable="false">
+  	<body position="0,20,0" orientation="0,0,0"/>
+  </box>	
+  <box id="wall_south" size="10,0.1,0.5" movable="false">
+	<body position="0,-20,0" orientation="0,0,0"/>
+  </box>
+  <box id="wall_east" size="0.1,40,0.5" movable="false">
+	<body position="5,0,0" orientation="0,0,0"/>
+  </box>
+  <box id="wall_west" size="0.1,40,0.5" movable="false">
+	<body position="-5,0,0" orientation="0,0,0"/>
+  </box>
+
+  <!--  <light id="yellowLight"
+           position="2,18,0.1"
+           orientation="0,0,0"
+           color="yellow"
+           intensity="100.0"
+           medium="leds" /> -->
+   <light id="yellowLight"
+           position="2,18,0.4"
+           orientation="0,0,0"
+           color="yellow"
+           intensity="100.0"
+           medium="leds">
+   </light>
+   <light id="greenLight"
+           position="-2,18,0.4"
+           orientation="0,0,0"
+           color="green"
+           intensity="100.0"
+           medium="leds"> 
+   </light> 
+   <!--<cylinder id="green_puck" height="0.05" radius="0.05" mass="0.1"
+                  movable="true">
+          <body position="-1,-17,0" orientation="0,0,0"/>
+          <leds medium="leds">
+            <led offset="0,0,0.06" anchor="origin" color="green"
+                 intensity="1.0"/>
+          </leds>
+        </cylinder> -->
+    <!--
+        You can distribute entities randomly. Here, we distribute
+        the entities in this way:
+        - the position is uniformly distributed on the ground, in the
+          square whose corners are (4,4) and (5,5)
+        - the orientations are non-zero only when rotating around Z and
+          chosen from a gaussian distribution, whose mean is zero degrees
+          and standard deviation is 360 degrees.
+    -->
+    <!--
+    <foot-bot id="bot" rab_range="40" omnidirectional_camera_aperture="89.99">
+      <body position="0,0,0" orientation="0,0,0" />
+      <controller config="argos_ros_bot" />
+    </foot-bot> -->
+    
+    <distribute>
+      <position method="uniform" min="-0.1,-1,0" max="0.1,1,0"/>
+      <orientation method="constant" values="0,0,0"/>
+
+      <entity quantity="2" max_trials="100">
+
+        <foot-bot id="bot" rab_range="40" omnidirectional_camera_aperture="89.99" >
+          <controller config="argos_ros_bot"/>
+        </foot-bot>
+
+      </entity>
+    </distribute>
+    
+	
+  </arena>
+
+  <!-- ******************* -->
+  <!-- * Physics engines * -->
+  <!-- ******************* -->
+  <physics_engines>
+    <dynamics2d id="dyn2d" />
+  </physics_engines>
+
+  <!-- ********* -->
+  <!-- * Media * -->
+  <!-- ********* -->
+  <media>
+    <led id="leds" />
+    <range_and_bearing id="rab" check_occlusions="false" />
+  </media>
+
+  <!-- ****************** -->
+  <!-- * Visualization * -->
+  <!-- ****************** -->
+  <visualization>
+    <qt-opengl>
+      <camera>
+        <placements>
+          <placement index="0" position="3.47447,8.20587,3.42167" look_at="3.94263,7.5512,2.82817" up="0.345221,-0.48276,0.804839" lens_focal_length="20" />
+        </placements>
+      </camera>
+    </qt-opengl>
+  </visualization>
+
+</argos-configuration>
