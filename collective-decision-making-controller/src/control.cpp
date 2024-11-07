@@ -72,7 +72,7 @@ Control::Control(std::shared_ptr<rclcpp::Node> node) :
 	stringstream lightListTopic, proxTopic, posTopic, rabTopic, blobTopic, killTopic;
 	lightListTopic << ns_ << "/light";
 	proxTopic << ns_ << "/proximity";
-	posTopic << ns_ << "/position";
+	posTopic << ns_ << "/pose";
 	rabTopic << ns_ << "/rab";
 	blobTopic << ns_ << "/blob";
 	killTopic << "/kill";

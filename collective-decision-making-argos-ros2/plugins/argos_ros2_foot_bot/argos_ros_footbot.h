@@ -46,6 +46,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include <geometry_msgs/msg/pose_stamped.hpp>
+#include "std_msgs/msg/float64_multi_array.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "collective_decision_making/msg/led.hpp"
 #include "collective_decision_making/msg/light_list.hpp"
@@ -71,6 +72,8 @@ class ArgosRosFootbot : public CCI_Controller{
 		rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr positionPublisher_;
 		// Position sensor publisher
 		rclcpp::Publisher<collective_decision_making::msg::PacketList>::SharedPtr rabPublisher_;
+		// range and bearing data publisher
+		rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr rabDataPublisher_;
 
 		/************************************
 		 * Subscribers
@@ -81,6 +84,8 @@ class ArgosRosFootbot : public CCI_Controller{
 		rclcpp::Subscription<collective_decision_making::msg::Packet>::SharedPtr cmdRabSubscriber_;
 		// Subscriber for cmd_led (Led) topic
 		rclcpp::Subscription<collective_decision_making::msg::Led>::SharedPtr cmdLedSubscriber_;
+		// Subscriber for Pose (PoseStamped) message) topic
+		rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr cmdPoseSubscriber_;
 
 
 
@@ -103,6 +108,10 @@ class ArgosRosFootbot : public CCI_Controller{
 		CCI_RangeAndBearingSensor* m_pcRABS;
 		/* Pointer to the range-and-bearing actuator */
 		CCI_RangeAndBearingActuator* m_pcRABA;
+		/* Pointer to the pose message */
+		geometry_msgs::msg::PoseStamped* m_pose;
+
+
 
 
 		// The following constant values were copied from the argos source tree from
@@ -168,18 +177,25 @@ class ArgosRosFootbot : public CCI_Controller{
 		/*
 		 * The callback method for getting new commanded packet on the cmd_packet topic.
 		 */
-		void cmdRabCallback(const collective_decision_making::msg::Packet& packet);
+		void cmdRabCallback(const collective_decision_making::msg::Packet &packet);
 		/*
 		 * The callback method for getting new commanded led color on the cmd_led topic.
 		 */
-		void cmdLedCallback(const collective_decision_making::msg::Led& ledColor);
+		void cmdLedCallback(const collective_decision_making::msg::Led &ledColor);
+		/*
+		 * The callback method for getting new commanded robot pose on the position topic.
+		 */
+		void cmdPoseCallback(const geometry_msgs::msg::PoseStamped &pose);
+
+
+		void Rab_actuator_encode(const geometry_msgs::msg::PoseStamped &pose);
+		std::vector<double> Rab_actuator_decode(std::vector<uint8_t> data);
+		std::vector<double> encode(double num);
+		double decode(uint8_t polarity, uint8_t integer, uint8_t decimal);
+		void Rab_actuator(const geometry_msgs::msg::PoseStamped& pose);
 
 		static std::shared_ptr<rclcpp::Node> nodeHandle;
-
-
-
 };
 
-
-
 #endif /* ARGOS_ROS_FOOTBOT_H_ */
+ 
