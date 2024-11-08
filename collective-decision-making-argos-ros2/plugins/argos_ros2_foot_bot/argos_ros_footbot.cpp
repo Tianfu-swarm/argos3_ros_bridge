@@ -212,30 +212,10 @@ void ArgosRosFootbot::ControlStep() {
 	positionPublisher_ -> publish(bot_pose);
 	/*********************************************
 	 * send message via Range-And-Bearing-Actuator
-	 * The position.x part data is：
-	 * [0]:polarity
-	 * [1]:Integer Part
-	 * [2]:Decimal Part
-	 * The position.y part data is：
-	 * [3]:polarity
-	 * [4]:Integer Part
-	 * [5]:Decimal Part
-	 * The orientation.z part data is：
-	 * [6]:polarity
-	 * [7]:Integer Part
-	 * [8]:Decimal Part
-	 * The orientation.w part data is：
-	 * [9]:polarity
-	 * [10]:Integer Part
-	 * [11]:Decimal Part
-	 * The robot moves only in the x, y plane. Only the yaw angle changes.
 	 *********************************************/
-	//Rab_actuator_encode(bot_pose);
+	
 	Rab_actuator(bot_pose);
 
-
-
-	
 	/*********************************************
 	 * Get readings from Range-And-Bearing-Sensor
 	 *********************************************/
@@ -243,28 +223,51 @@ void ArgosRosFootbot::ControlStep() {
 	std_msgs::msg::Float64MultiArray multiple_pose;
 	PacketList packetList;
 	packetList.n = tRabReads.size();
-	//cout << GetId() << ": received the following broadcasts: " << packetList.n << endl;
+	// cout << GetId() << ": received the following broadcasts: " << packetList.n << endl;
+
+	//  准备 Float64MultiArray 的布局
+	multiple_pose.layout.dim.resize(1 + 7); // 1维用于消息数量，7维用于数据字段标签
+
+	multiple_pose.layout.dim[0].label = "messages"; // 消息维度
+	multiple_pose.layout.dim[0].size = tRabReads.size();
+	multiple_pose.layout.dim[0].stride = tRabReads.size() * 7; // 总共 7 个数据字段
+
+	// 为每个数据字段添加标签
+	std::vector<std::string> labels = {"x", "y", "z", "o_w", "o_x", "o_y", "o_z"};
+	for (size_t j = 0; j < 7; ++j)
+	{
+		multiple_pose.layout.dim[j + 1].label = labels[j];
+		multiple_pose.layout.dim[j + 1].size = 1;
+		multiple_pose.layout.dim[j + 1].stride = 1;
+	}
+
+	multiple_pose.layout.data_offset = 0;
+
+	// 为 multiple_pose 数据分配足够的空间
+	multiple_pose.data.resize(packetList.n * 7);
+
 	for (size_t i = 0; i < packetList.n; ++i) {
 		Packet packet;
 		packet.range = tRabReads[i].Range;
 		packet.h_bearing = tRabReads[i].HorizontalBearing.GetValue();
 		packet.v_bearing = tRabReads[i].VerticalBearing.GetValue();
 
-		
-		packet.data.push_back(tRabReads[i].Data[0]);
-		packet.data.push_back(tRabReads[i].Data[1]);
-
 		packetList.packets.push_back(packet);
 
-		// std::vector<uint8_t> tRabRead;
-		// for (size_t j = 0; j < 12; j++)
-		// {
-		// 	tRabRead.push_back(tRabReads[i].Data[j]);
-		// }
-		// std::vector<double> pose;
-		// pose = Rab_actuator_decode(tRabRead);
+		// 从 CByteArray 中解析数据并填充 multiple_pose.data
+		CByteArray cBuf = tRabReads[i].Data;
 
-		// multiple_pose.data.insert(multiple_pose.data.end(), pose.begin(), pose.end());
+		float x, y, z, o_w, o_x, o_y, o_z;
+		cBuf >> x >> y >> z >> o_w >> o_x >> o_y >> o_z;
+
+		// 将解析后的数据放入 multiple_pose 的 data 数组中
+		multiple_pose.data[i * 7] = static_cast<double>(x);
+		multiple_pose.data[i * 7 + 1] = static_cast<double>(y);
+		multiple_pose.data[i * 7 + 2] = static_cast<double>(z);
+		multiple_pose.data[i * 7 + 3] = static_cast<double>(o_w);
+		multiple_pose.data[i * 7 + 4] = static_cast<double>(o_x);
+		multiple_pose.data[i * 7 + 5] = static_cast<double>(o_y);
+		multiple_pose.data[i * 7 + 6] = static_cast<double>(o_z);
 	}
 
 	rabPublisher_->publish(packetList);
@@ -324,168 +327,7 @@ void ArgosRosFootbot::cmdLedCallback(const Led& ledColor){
 		//cout << GetId() << " setting leds to green." << std::endl;
 	}
 }
-/*********************************************
- * Rab Actuator encode and decode
- * The position.x part data is：
- * [0]:polarity
- * [1]:Integer Part
- * [2]:Decimal Part
- * The position.y part data is：
- * [3]:polarity
- * [4]:Integer Part
- * [5]:Decimal Part
- * The orientation.z part data is：
- * [6]:polarity
- * [7]:Integer Part
- * [8]:Decimal Part
- * The orientation.w part data is：
- * [9]:polarity
- * [10]:Integer Part
- * [11]:Decimal Part
- * The robot moves only in the x, y plane. Only the yaw angle changes.
- *********************************************/
-void ArgosRosFootbot::Rab_actuator_encode(const geometry_msgs::msg::PoseStamped &pose)
-{
-	m_pcRABA->ClearData();
-	uint8_t polarity_position_x;	// 0-positive, 1-negative
-	uint8_t polarity_position_y;	// 0-positive, 1-negative
-	uint8_t polarity_orientation_z; // 0-positive, 1-negative
-	uint8_t polarity_orientation_w; // 0-positive, 1-negative
 
-	uint8_t integer_position_x;
-	uint8_t decimal_position_x;
-	uint8_t integer_position_y;
-	uint8_t decimal_position_y;
-	uint8_t integer_orientation_z;
-	uint8_t decimal_orientation_z;
-	uint8_t integer_orientation_w;
-	uint8_t decimal_orientation_w;
-
-	std::vector<double> result_position_x;
-	result_position_x = encode(pose.pose.position.x);
-	polarity_position_x = result_position_x[0];
-	integer_position_x = result_position_x[1];
-	decimal_position_x = result_position_x[2];
-
-	std::vector<double> result_position_y;
-	result_position_y = encode(pose.pose.position.y);
-	polarity_position_y = result_position_y[0];
-	integer_position_y = result_position_y[1];
-	decimal_position_y = result_position_y[2];
-
-	std::vector<double> result_orientation_z;
-	result_orientation_z = encode(pose.pose.orientation.z);
-	polarity_orientation_z = result_orientation_z[0];
-	integer_orientation_z = result_orientation_z[1];
-	decimal_orientation_z = result_orientation_z[2];
-
-	std::vector<double> result_orientation_w;
-	result_orientation_w = encode(pose.pose.orientation.w);
-	polarity_orientation_w = result_orientation_w[0];
-	integer_orientation_w = result_orientation_w[1];
-	decimal_orientation_w = result_orientation_w[2];
-
-	m_pcRABA->SetData(0, polarity_position_x);
-	m_pcRABA->SetData(1, integer_position_x);
-	m_pcRABA->SetData(2, decimal_position_x);
-	m_pcRABA->SetData(3, polarity_position_y);
-	m_pcRABA->SetData(4, integer_position_y);
-	m_pcRABA->SetData(5, decimal_position_y);
-	m_pcRABA->SetData(6, polarity_orientation_z);
-	m_pcRABA->SetData(7, integer_orientation_z);
-	m_pcRABA->SetData(8, decimal_orientation_z);
-	m_pcRABA->SetData(9, polarity_orientation_w);
-	m_pcRABA->SetData(10, integer_orientation_w);
-	m_pcRABA->SetData(11, decimal_orientation_w);
-}
-std::vector<double> ArgosRosFootbot::encode(double num)
-{
-	std::vector<double> result;
-	uint8_t polarity;
-	uint8_t integer;
-	uint8_t decimal;
-	if (num > 0)
-	{
-		polarity = 0;
-		integer = trunc(num);
-		if (num > 255)
-		{
-			std::cout << "Robot's position exceeds the maximum value (255, 255)" << std::endl;
-		}
-		decimal = num - integer;
-		if (decimal > 0.255)
-		{
-			decimal = decimal * 100;
-		}
-		else
-		{
-			decimal = decimal * 1000;
-		}
-	}
-	else
-	{
-		polarity = 1;
-		integer = -trunc(num);
-		if (num > 255)
-		{
-			std::cout << "Robot's position exceeds the maximum value (255, 255)" << std::endl;
-		}
-		decimal = -(num + integer);
-		if (decimal > 0.255)
-		{
-			decimal = decimal * 1000;
-		}
-		else
-		{
-			decimal = decimal * 100;
-		}
-	}
-	result.push_back(polarity);
-	result.push_back(integer);
-	result.push_back(decimal);
-
-	return result;
-}
-std::vector<double> ArgosRosFootbot::Rab_actuator_decode(std::vector<uint8_t> data)
-{
-	std::vector<double> result;
-
-	double position_x = decode(data[0], data[1], data[2]);
-	double position_y = decode(data[3], data[4], data[5]);
-	double orientation_z = decode(data[6], data[7], data[8]);
-	double orientation_w = decode(data[9], data[10], data[11]);
-
-	result.push_back(position_x);
-	result.push_back(position_y);
-	result.push_back(orientation_z);
-	result.push_back(orientation_w);
-
-	return result;
-}
-double ArgosRosFootbot::decode(uint8_t polarity, uint8_t integer, uint8_t decimal)
-{
-	double num;
-
-	// 处理符号
-	double sign = (polarity == 0) ? 1.0 : -1.0;
-
-	// 恢复小数部分
-	double fractional_part;
-	if (decimal > 99) // 如果小数部分超过99，说明它是通过100缩放的
-	{
-		fractional_part = decimal / 1000.0;
-	}
-	else // 否则，它是通过1000缩放的
-	{
-		fractional_part = decimal / 100.0;
-	}
-
-	// 还原数字
-	num = integer + fractional_part;
-
-	// 应用符号
-	return sign * num;
-}
 void ArgosRosFootbot::Rab_actuator(const geometry_msgs::msg::PoseStamped& pose){
 	
 	CByteArray cBuf;

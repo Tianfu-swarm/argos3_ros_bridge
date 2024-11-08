@@ -187,11 +187,6 @@ class ArgosRosFootbot : public CCI_Controller{
 		 */
 		void cmdPoseCallback(const geometry_msgs::msg::PoseStamped &pose);
 
-
-		void Rab_actuator_encode(const geometry_msgs::msg::PoseStamped &pose);
-		std::vector<double> Rab_actuator_decode(std::vector<uint8_t> data);
-		std::vector<double> encode(double num);
-		double decode(uint8_t polarity, uint8_t integer, uint8_t decimal);
 		void Rab_actuator(const geometry_msgs::msg::PoseStamped& pose);
 
 		static std::shared_ptr<rclcpp::Node> nodeHandle;
