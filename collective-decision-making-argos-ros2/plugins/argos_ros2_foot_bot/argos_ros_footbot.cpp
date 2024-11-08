@@ -56,7 +56,7 @@ void ArgosRosFootbot::Init(TConfigurationNode& t_node){
 	proxTopic 		<< "/" << GetId() << "/proximity";
 	positionTopic 	<< "/" << GetId() << "/pose";
 	rabTopic 		<< "/" << GetId() << "/rab";
-	rabDataTopic	<< "/" << GetId() << "/rabData";
+	rabDataTopic	<< "/" << GetId() << "/rab_data";
 	lightListPublisher_ = ArgosRosFootbot::nodeHandle -> create_publisher<LightList>(lightTopic.str(), 1);
 	blobPublisher_ 		= ArgosRosFootbot::nodeHandle -> create_publisher<BlobList>(blobTopic.str(), 1);
 	promixityPublisher_ = ArgosRosFootbot::nodeHandle -> create_publisher<ProximityList>(proxTopic.str(), 1);
