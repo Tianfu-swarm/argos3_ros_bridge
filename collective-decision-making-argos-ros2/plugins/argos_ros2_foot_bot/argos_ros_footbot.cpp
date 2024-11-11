@@ -50,33 +50,33 @@ void ArgosRosFootbot::Init(TConfigurationNode& t_node){
 	/********************************
 	 * Create the topics to publish
 	 *******************************/
-	stringstream lightTopic, blobTopic, proxTopic, positionTopic, rabTopic, rabDataTopic;
+	stringstream lightTopic, blobTopic, proxTopic, positionTopic, rabTopic;
 	lightTopic 		<< "/" << GetId() << "/light";
 	blobTopic 		<< "/" << GetId() << "/blob";
 	proxTopic 		<< "/" << GetId() << "/proximity";
 	positionTopic 	<< "/" << GetId() << "/pose";
-	rabTopic 		<< "/" << GetId() << "/rab";
-	rabDataTopic	<< "/" << GetId() << "/rab_data";
+	rabTopic 		<< "/" << GetId() << "/rab_sensor";
+	
 	lightListPublisher_ = ArgosRosFootbot::nodeHandle -> create_publisher<LightList>(lightTopic.str(), 1);
 	blobPublisher_ 		= ArgosRosFootbot::nodeHandle -> create_publisher<BlobList>(blobTopic.str(), 1);
 	promixityPublisher_ = ArgosRosFootbot::nodeHandle -> create_publisher<ProximityList>(proxTopic.str(), 1);
 	positionPublisher_ 	= ArgosRosFootbot::nodeHandle -> create_publisher<geometry_msgs::msg::PoseStamped>(positionTopic.str(), 1);
-	rabPublisher_ 		= ArgosRosFootbot::nodeHandle -> create_publisher<PacketList>(rabTopic.str(), 1);
-	rabDataPublisher_ 	= ArgosRosFootbot::nodeHandle -> create_publisher<std_msgs::msg::Float64MultiArray>(rabDataTopic.str(), 1);
+	rabPublisher_ 		= ArgosRosFootbot::nodeHandle -> create_publisher<std_msgs::msg::Float64MultiArray>(rabTopic.str(), 1);
+	
 
 	/*********************************
 	 * Create subscribers
 	 ********************************/
 	stringstream cmdVelTopic, cmdRabTopic, cmdLedTopic;
 	cmdVelTopic 	<< "/" << GetId() << "/cmd_vel";
-	cmdRabTopic		<< "/" << GetId() << "/cmd_rab";
+	cmdRabTopic		<< "/" << GetId() << "/rab_actuator";
 	cmdLedTopic		<< "/" << GetId() << "/cmd_led";
 	cmdVelSubscriber_ = ArgosRosFootbot::nodeHandle -> create_subscription<Twist>(
 						cmdVelTopic.str(),
 						1,
 						std::bind(&ArgosRosFootbot::cmdVelCallback, this, _1)
 						);
-	cmdRabSubscriber_ = ArgosRosFootbot::nodeHandle -> create_subscription<Packet>(
+	cmdRabSubscriber_ = ArgosRosFootbot::nodeHandle -> create_subscription<std_msgs::msg::Float64MultiArray>(
 						cmdRabTopic.str(),
 						1,
 						std::bind(&ArgosRosFootbot::cmdRabCallback, this, _1)
@@ -210,43 +210,17 @@ void ArgosRosFootbot::ControlStep() {
 	bot_pose.pose.orientation.z = tPosReads.Orientation.GetZ();
 
 	positionPublisher_ -> publish(bot_pose);
-	/*********************************************
-	 * send message via Range-And-Bearing-Actuator
-	 *********************************************/
-	
-	Rab_actuator(bot_pose);
 
 	/*********************************************
 	 * Get readings from Range-And-Bearing-Sensor
 	 *********************************************/
 	const CCI_RangeAndBearingSensor::TReadings& tRabReads = m_pcRABS->GetReadings();
-	std_msgs::msg::Float64MultiArray multiple_pose;
+	std_msgs::msg::Float64MultiArray rabSensorData;
 	PacketList packetList;
 	packetList.n = tRabReads.size();
 	// cout << GetId() << ": received the following broadcasts: " << packetList.n << endl;
-
-	//  准备 Float64MultiArray 的布局
-	multiple_pose.layout.dim.resize(1 + 7); // 1维用于消息数量，7维用于数据字段标签
-
-	multiple_pose.layout.dim[0].label = "messages"; // 消息维度
-	multiple_pose.layout.dim[0].size = tRabReads.size();
-	multiple_pose.layout.dim[0].stride = tRabReads.size() * 7; // 总共 7 个数据字段
-
-	// 为每个数据字段添加标签
-	std::vector<std::string> labels = {"x", "y", "z", "o_w", "o_x", "o_y", "o_z"};
-	for (size_t j = 0; j < 7; ++j)
+	for (size_t i = 0; i < packetList.n; ++i)
 	{
-		multiple_pose.layout.dim[j + 1].label = labels[j];
-		multiple_pose.layout.dim[j + 1].size = 1;
-		multiple_pose.layout.dim[j + 1].stride = 1;
-	}
-
-	multiple_pose.layout.data_offset = 0;
-
-	// 为 multiple_pose 数据分配足够的空间
-	multiple_pose.data.resize(packetList.n * 7);
-
-	for (size_t i = 0; i < packetList.n; ++i) {
 		Packet packet;
 		packet.range = tRabReads[i].Range;
 		packet.h_bearing = tRabReads[i].HorizontalBearing.GetValue();
@@ -254,24 +228,25 @@ void ArgosRosFootbot::ControlStep() {
 
 		packetList.packets.push_back(packet);
 
-		// 从 CByteArray 中解析数据并填充 multiple_pose.data
-		CByteArray cBuf = tRabReads[i].Data;
+		size_t num_elements = tRabReads[i].Data.Size() / sizeof(double);
+		std::vector<double> values(num_elements);
+		for (size_t j = 0; j < num_elements; ++j)
+		{
+			double value;
 
-		float x, y, z, o_w, o_x, o_y, o_z;
-		cBuf >> x >> y >> z >> o_w >> o_x >> o_y >> o_z;
+			uint8_t *byte_ptr = reinterpret_cast<uint8_t *>(&value);
 
-		// 将解析后的数据放入 multiple_pose 的 data 数组中
-		multiple_pose.data[i * 7] = static_cast<double>(x);
-		multiple_pose.data[i * 7 + 1] = static_cast<double>(y);
-		multiple_pose.data[i * 7 + 2] = static_cast<double>(z);
-		multiple_pose.data[i * 7 + 3] = static_cast<double>(o_w);
-		multiple_pose.data[i * 7 + 4] = static_cast<double>(o_x);
-		multiple_pose.data[i * 7 + 5] = static_cast<double>(o_y);
-		multiple_pose.data[i * 7 + 6] = static_cast<double>(o_z);
+			// 从 cBuf 中读取字节并赋值给 value
+			for (size_t byte_idx = 0; byte_idx < sizeof(double); ++byte_idx)
+			{
+				byte_ptr[byte_idx] = tRabReads[i].Data[j * sizeof(double) + byte_idx];
+			}
+			rabSensorData.data.push_back(value);
+		}
 	}
 
-	rabPublisher_->publish(packetList);
-	rabDataPublisher_->publish(multiple_pose);
+	//rabPublisher_->publish(packetList);
+	rabPublisher_->publish(rabSensorData);
 
 	/*********************************************
 	 * receive message from ros and send it to Left-Right-wheel-Actuator
@@ -311,10 +286,21 @@ void ArgosRosFootbot::cmdVelCallback(const Twist& twist) {
 	stepsSinceCallback = 0;
 }
 
-void ArgosRosFootbot::cmdRabCallback(const Packet& packet){
-	//cout << GetId() << " Packet data as received: " << packet.data[0] << " for id: " << std::stoi( packet.id ) <<endl;
-	m_pcRABA -> SetData(0, packet.data[0]);
-	m_pcRABA -> SetData(1, std::stoi( packet.id ));
+void ArgosRosFootbot::cmdRabCallback(const std_msgs::msg::Float64MultiArray& rabActuator){
+
+	CByteArray cBuf;
+
+	for (size_t i; i < rabActuator.data.size(); i++)
+	{
+		cBuf << rabActuator.data[i];
+	}
+	size_t SIZE = 28;
+	while (cBuf.Size() < SIZE)
+	{
+		cBuf << '\0';
+	}
+
+	m_pcRABA->SetData(cBuf);
 }
 void ArgosRosFootbot::cmdLedCallback(const Led& ledColor){
 	//cout << " Received the following color: " << ledColor.color << std::endl;
@@ -328,35 +314,6 @@ void ArgosRosFootbot::cmdLedCallback(const Led& ledColor){
 	}
 }
 
-void ArgosRosFootbot::Rab_actuator(const geometry_msgs::msg::PoseStamped& pose){
-	
-	CByteArray cBuf;
-	float x = pose.pose.position.x;
-	float y = pose.pose.position.y;
-	float z = pose.pose.position.z;
-
-	float o_w = pose.pose.orientation.w;
-	float o_x = pose.pose.orientation.x;
-	float o_y = pose.pose.orientation.y;
-	float o_z = pose.pose.orientation.z;
-
-	cBuf << x;
-	cBuf << y;
-	cBuf << z;
-
-	cBuf << o_w;
-	cBuf << o_x;
-	cBuf << o_y;
-	cBuf << o_z;
-
-	size_t SIZE = 28;
-	while (cBuf.Size() < SIZE)
-	{
-		cBuf << '\0'; 
-	}
-
-	m_pcRABA->SetData(cBuf);
-}
 /*
 * This statement notifies ARGoS of the existence of the controller.
 * It binds the class passed as first argument to the string passed as

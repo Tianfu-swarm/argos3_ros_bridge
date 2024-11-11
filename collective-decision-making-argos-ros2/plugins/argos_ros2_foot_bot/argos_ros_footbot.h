@@ -71,7 +71,7 @@ class ArgosRosFootbot : public CCI_Controller{
 		// Position sensor publisher
 		rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr positionPublisher_;
 		// Position sensor publisher
-		rclcpp::Publisher<collective_decision_making::msg::PacketList>::SharedPtr rabPublisher_;
+		rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr rabPublisher_;
 		// range and bearing data publisher
 		rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr rabDataPublisher_;
 
@@ -80,12 +80,12 @@ class ArgosRosFootbot : public CCI_Controller{
 		 ***********************************/
 		// Subscriber for cmd_vel (Twist message) topic.
 		rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmdVelSubscriber_;
-		// Subscriber for cmd_rab (Packet) topic
-		rclcpp::Subscription<collective_decision_making::msg::Packet>::SharedPtr cmdRabSubscriber_;
+		// Subscriber for cmd_rab (Float64MultiArray) topic
+		rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr cmdRabSubscriber_;
 		// Subscriber for cmd_led (Led) topic
 		rclcpp::Subscription<collective_decision_making::msg::Led>::SharedPtr cmdLedSubscriber_;
-		// Subscriber for Pose (PoseStamped) message) topic
-		rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr cmdPoseSubscriber_;
+		// Subscriber for Actuator message) topic
+		rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr cmdActuatorSubscriber_;
 
 
 
@@ -177,7 +177,7 @@ class ArgosRosFootbot : public CCI_Controller{
 		/*
 		 * The callback method for getting new commanded packet on the cmd_packet topic.
 		 */
-		void cmdRabCallback(const collective_decision_making::msg::Packet &packet);
+		void cmdRabCallback(const std_msgs::msg::Float64MultiArray& rabActuator);
 		/*
 		 * The callback method for getting new commanded led color on the cmd_led topic.
 		 */
@@ -187,7 +187,6 @@ class ArgosRosFootbot : public CCI_Controller{
 		 */
 		void cmdPoseCallback(const geometry_msgs::msg::PoseStamped &pose);
 
-		void Rab_actuator(const geometry_msgs::msg::PoseStamped& pose);
 
 		static std::shared_ptr<rclcpp::Node> nodeHandle;
 };
