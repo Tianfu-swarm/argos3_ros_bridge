@@ -228,20 +228,23 @@ void ArgosRosFootbot::ControlStep() {
 
 		packetList.packets.push_back(packet);
 
-		size_t num_elements = tRabReads[i].Data.Size() / sizeof(double);
-		std::vector<double> values(num_elements);
-		for (size_t j = 0; j < num_elements; ++j)
+		const UInt8 *byteData = tRabReads[i].Data.ToCArray();			 // 获取字节数据指针
+		size_t num_elements = tRabReads[i].Data.Size() / sizeof(double); // 计算 double 的数量
+
+		// 如果数据指针有效
+		if (byteData != nullptr)
 		{
-			double value;
-
-			uint8_t *byte_ptr = reinterpret_cast<uint8_t *>(&value);
-
-			// 从 cBuf 中读取字节并赋值给 value
-			for (size_t byte_idx = 0; byte_idx < sizeof(double); ++byte_idx)
+			// 遍历字节数据，并将每 8 个字节转换为一个 double
+			for (size_t j = 0; j < num_elements; ++j)
 			{
-				byte_ptr[byte_idx] = tRabReads[i].Data[j * sizeof(double) + byte_idx];
+				double value;
+
+				// 使用 memcpy 读取 8 个字节并转换为 double
+				std::memcpy(&value, byteData + j * sizeof(double), sizeof(double));
+
+				rabSensorData.data.push_back(value);
+				//std::cout << "get rab_sensor message ,value is :   " << value << std::endl;
 			}
-			rabSensorData.data.push_back(value);
 		}
 	}
 
@@ -286,22 +289,43 @@ void ArgosRosFootbot::cmdVelCallback(const Twist& twist) {
 	stepsSinceCallback = 0;
 }
 
-void ArgosRosFootbot::cmdRabCallback(const std_msgs::msg::Float64MultiArray& rabActuator){
+void ArgosRosFootbot::cmdRabCallback(const std_msgs::msg::Float64MultiArray &rabActuator)
+{
 
 	CByteArray cBuf;
 
 	for (size_t i; i < rabActuator.data.size(); i++)
 	{
-		cBuf << rabActuator.data[i];
+		float data = rabActuator.data[i];
+		cBuf << data;
+		std::cout << "get rab_actuator message from ros,value is :   " << rabActuator.data[i] << std::endl;
 	}
-	size_t SIZE = 28;
+	size_t SIZE = 120;
 	while (cBuf.Size() < SIZE)
 	{
 		cBuf << '\0';
 	}
 
+	const UInt8 *byteData = cBuf.ToCArray();
+	size_t dataSize = cBuf.Size();
+
+	// 确保数据有效
+	if (byteData != nullptr)
+    {
+        std::cout << "Printing double values from CByteArray: " << std::endl;
+
+        // 解析每8个字节为一个 double
+        for (size_t i = 0; i < dataSize / sizeof(float); ++i)
+        {
+            double value;
+            std::memcpy(&value, byteData + i * sizeof(float), sizeof(float));
+            std::cout << "Double value " << i + 1 << ": " << value << std::endl;
+        }
+    }
+
 	m_pcRABA->SetData(cBuf);
 }
+
 void ArgosRosFootbot::cmdLedCallback(const Led& ledColor){
 	//cout << " Received the following color: " << ledColor.color << std::endl;
 	if ( ledColor.color == "yellow" ){
