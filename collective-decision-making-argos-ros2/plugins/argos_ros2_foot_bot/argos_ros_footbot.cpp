@@ -228,28 +228,19 @@ void ArgosRosFootbot::ControlStep() {
 
 		packetList.packets.push_back(packet);
 
-		const UInt8 *byteData = tRabReads[i].Data.ToCArray();			 // 获取字节数据指针
-		size_t num_elements = tRabReads[i].Data.Size() / sizeof(double); // 计算 double 的数量
-
-		// 如果数据指针有效
-		if (byteData != nullptr)
-		{
-			// 遍历字节数据，并将每 8 个字节转换为一个 double
-			for (size_t j = 0; j < num_elements; ++j)
-			{
-				double value;
-
-				// 使用 memcpy 读取 8 个字节并转换为 double
-				std::memcpy(&value, byteData + j * sizeof(double), sizeof(double));
-
-				rabSensorData.data.push_back(value);
-				//std::cout << "get rab_sensor message ,value is :   " << value << std::endl;
-			}
+		CByteArray cBuf_copy;
+		cBuf_copy = tRabReads[i].Data;
+		double extractedValue;
+		while (cBuf_copy.Size() >= sizeof(double))
+		{ // 每次提取一个 double
+			cBuf_copy >> extractedValue;
+			rabSensorData.data.push_back(extractedValue);
 		}
 	}
 
-	//rabPublisher_->publish(packetList);
+	// rabPublisher_->publish(packetList);
 	rabPublisher_->publish(rabSensorData);
+	std::cout << "rab sensor get message" << std::endl;
 
 	/*********************************************
 	 * receive message from ros and send it to Left-Right-wheel-Actuator
@@ -294,35 +285,18 @@ void ArgosRosFootbot::cmdRabCallback(const std_msgs::msg::Float64MultiArray &rab
 
 	CByteArray cBuf;
 
-	for (size_t i; i < rabActuator.data.size(); i++)
+	for (size_t i = 0; i < rabActuator.data.size(); i++)
 	{
-		float data = rabActuator.data[i];
+		double data = rabActuator.data[i];
 		cBuf << data;
 		std::cout << "get rab_actuator message from ros,value is :   " << rabActuator.data[i] << std::endl;
 	}
 	size_t SIZE = 120;
 	while (cBuf.Size() < SIZE)
 	{
-		cBuf << '\0';
+		double padding = 0.0;
+		cBuf << padding;
 	}
-
-	const UInt8 *byteData = cBuf.ToCArray();
-	size_t dataSize = cBuf.Size();
-
-	// 确保数据有效
-	if (byteData != nullptr)
-    {
-        std::cout << "Printing double values from CByteArray: " << std::endl;
-
-        // 解析每8个字节为一个 double
-        for (size_t i = 0; i < dataSize / sizeof(float); ++i)
-        {
-            double value;
-            std::memcpy(&value, byteData + i * sizeof(float), sizeof(float));
-            std::cout << "Double value " << i + 1 << ": " << value << std::endl;
-        }
-    }
-
 	m_pcRABA->SetData(cBuf);
 }
 
