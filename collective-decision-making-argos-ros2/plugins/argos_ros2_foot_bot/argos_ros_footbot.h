@@ -47,7 +47,10 @@
 #include "geometry_msgs/msg/twist.hpp"
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include "std_msgs/msg/float64_multi_array.hpp"
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <sensor_msgs/point_cloud2_iterator.hpp>
 #include "std_msgs/msg/bool.hpp"
+
 #include "collective_decision_making/msg/led.hpp"
 #include "collective_decision_making/msg/light_list.hpp"
 #include "collective_decision_making/msg/blob_list.hpp"
@@ -65,15 +68,15 @@ class ArgosRosFootbot : public CCI_Controller{
 		// Light list publisher
 		rclcpp::Publisher<collective_decision_making::msg::LightList>::SharedPtr lightListPublisher_;
 		// Proximity sensor publisher
-		rclcpp::Publisher<collective_decision_making::msg::ProximityList>::SharedPtr promixityPublisher_;
+		rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr promixityPublisher_;
 
 		rclcpp::Publisher<collective_decision_making::msg::BlobList>::SharedPtr blobPublisher_;
 		// Position sensor publisher
 		rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr positionPublisher_;
-		// Position sensor publisher
-		rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr rabPublisher_;
-		// range and bearing data publisher
+		// rab data from boardcatsing
 		rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr rabDataPublisher_;
+		// rab data from range-and-bearing
+		rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr rabPointPublisher_;
 
 		/************************************
 		 * Subscribers

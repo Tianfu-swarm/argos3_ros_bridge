@@ -11,9 +11,9 @@ target_link_libraries(argos_ros_bot
   /usr/local/lib/argos3/libargos3plugin_simulator_genericrobot.so
   /usr/local/lib/argos3/libargos3core_simulator.so)
   
-ament_export_dependencies(rosidl_default_runtime rclcpp std_msgs message_runtime collective_decision_making)
+ament_export_dependencies(rosidl_default_runtime rclcpp std_msgs message_runtime collective_decision_making sensor_msgs)
 
-ament_target_dependencies(argos_ros_bot rclcpp geometry_msgs std_msgs ARGoS collective_decision_making)
+ament_target_dependencies(argos_ros_bot rclcpp geometry_msgs std_msgs ARGoS collective_decision_making sensor_msgs)
 
 install(
     TARGETS argos_ros_bot
