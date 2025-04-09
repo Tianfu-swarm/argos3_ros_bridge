@@ -57,6 +57,11 @@ void ArgosRosFootbot::Init(TConfigurationNode &t_node)
 	positionPublisher_ = ArgosRosFootbot::nodeHandle->create_publisher<geometry_msgs::msg::PoseStamped>(positionTopic.str(), 1);
 	rabDataPublisher_ = ArgosRosFootbot::nodeHandle->create_publisher<std_msgs::msg::Float64MultiArray>(rabDataTopic.str(), 1);
 	rabPointPublisher_ = ArgosRosFootbot::nodeHandle->create_publisher<sensor_msgs::msg::PointCloud2>(rabPointTopic.str(), 1);
+	bool is_clock_publisher = (GetId() == "bot0");
+	if (is_clock_publisher)
+	{
+		clockPublisher_ = ArgosRosFootbot::nodeHandle->create_publisher<rosgraph_msgs::msg::Clock>("/clock", 10);
+	}
 
 	/*********************************
 	 * Create subscribers
@@ -105,6 +110,17 @@ void ArgosRosFootbot::Init(TConfigurationNode &t_node)
 
 void ArgosRosFootbot::ControlStep()
 {
+	const auto &sim = argos::CSimulator::GetInstance();
+	argos::CPhysicsEngine &engine = sim.GetPhysicsEngine("dyn2d");
+	argos::Real sim_time = sim.GetSpace().GetSimulationClock() * engine.GetPhysicsClockTick();
+	rclcpp::Time ros_time(static_cast<uint64_t>(sim_time * 1e9)); // 仿真秒 -> 纳秒
+
+	rosgraph_msgs::msg::Clock clock_msg;
+	clock_msg.clock = ros_time;
+	if (clockPublisher_)
+	{
+		clockPublisher_->publish(clock_msg);
+	}
 
 	rclcpp::spin_some(ArgosRosFootbot::nodeHandle);
 
@@ -160,9 +176,6 @@ void ArgosRosFootbot::ControlStep()
 
 	/*********************************************************************
 	 * Get readings from Positioning sensor
-	 * TODO: Find an elegant way to make assignment
-	 * Problem: can't directly assign argos::CVector3 to geometry::Vector3
-	 * Same with the Quaternion
 	 **********************************************************************/
 	const CCI_PositioningSensor::SReading &tPosReads = m_pcPosition->GetReading();
 

@@ -1,5 +1,12 @@
 #ifndef ARGOS_ROS_FOOTBOT_H_
 #define ARGOS_ROS_FOOTBOT_H_
+
+/* Definition of the ARGoS Simulator singleton (controls simulation flow, time, etc.) */
+#include <argos3/core/simulator/simulator.h>
+/* Definition of the simulation space (manages entities, robot positions, etc.) */
+#include <argos3/core/simulator/space/space.h>
+/* Definition of the physics engine interface (manages physical simulation and time step size) */
+#include <argos3/core/simulator/physics_engine/physics_engine.h>
 /* Definition of the CCI_Controller class. */
 #include <argos3/core/control_interface/ci_controller.h>
 /* Definition of the differential steering actuator */
@@ -37,6 +44,7 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 #include "std_msgs/msg/bool.hpp"
+#include "rosgraph_msgs/msg/clock.hpp"
 
 using namespace argos;
 using namespace std::chrono_literals;
@@ -53,6 +61,8 @@ private:
 	rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr rabDataPublisher_;
 	// rab data from range-and-bearing
 	rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr rabPointPublisher_;
+	// sim clock publisher
+	rclcpp::Publisher<rosgraph_msgs::msg::Clock>::SharedPtr clockPublisher_;
 
 	/************************************
 	 * Subscribers
