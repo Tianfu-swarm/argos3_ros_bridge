@@ -1,6 +1,6 @@
-## 🧩 Argos ROS Bridge Controller Overview
+## 🧩 Overview
 
-This controller bridges the ARGoS simulator with the ROS 2 ecosystem, enabling seamless integration of robot simulation with standard ROS tools and workflows.
+This package bridges the ARGoS simulator with the ROS 2 ecosystem, enabling seamless integration of robot simulation with standard ROS tools and workflows.
 
 ### ✨ Key Features
 
