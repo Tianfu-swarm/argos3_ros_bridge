@@ -45,6 +45,7 @@
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 #include "std_msgs/msg/bool.hpp"
 #include "rosgraph_msgs/msg/clock.hpp"
+#include <tf2_ros/transform_broadcaster.h>
 
 using namespace argos;
 using namespace std::chrono_literals;
@@ -54,15 +55,14 @@ class ArgosRosFootbot : public CCI_Controller
 private:
 	// Proximity sensor publisher
 	rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr promixityPublisher_;
-
 	// Position sensor publisher
 	rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr positionPublisher_;
 	// rab data from boardcatsing
 	rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr rabDataPublisher_;
-	// rab data from range-and-bearing
-	rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr rabPointPublisher_;
 	// sim clock publisher
 	rclcpp::Publisher<rosgraph_msgs::msg::Clock>::SharedPtr clockPublisher_;
+	//
+	rclcpp::Publisher<tf2_msgs::msg::TFMessage>::SharedPtr tfPublisher_;
 
 	/************************************
 	 * Subscribers
@@ -71,7 +71,6 @@ private:
 	rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmdVelSubscriber_;
 	// Subscriber for cmd_rab (Float64MultiArray) topic
 	rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr cmdRabSubscriber_;
-	// Subscriber for cmd_led (Led) topic
 	// Subscriber for Actuator message) topic
 	rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr cmdActuatorSubscriber_;
 

@@ -45,18 +45,19 @@ void ArgosRosFootbot::Init(TConfigurationNode &t_node)
 	/********************************
 	 * Create the topics to publish
 	 *******************************/
-	stringstream lightTopic, blobTopic, proxTopic, positionTopic, rabDataTopic, rabPointTopic;
+	stringstream lightTopic, blobTopic, proxTopic, positionTopic, rabDataTopic, tfTopic;
 	lightTopic << "/" << GetId() << "/light";
 	blobTopic << "/" << GetId() << "/blob";
 	proxTopic << "/" << GetId() << "/proximity_point";
 	positionTopic << "/" << GetId() << "/pose";
 	rabDataTopic << "/" << GetId() << "/rab_sensor";
-	rabPointTopic << "/" << GetId() << "/rab_point";
+	tfTopic << "/" << GetId() << "/rab_tf";
 
-	promixityPublisher_ = ArgosRosFootbot::nodeHandle->create_publisher<sensor_msgs::msg::PointCloud2>(proxTopic.str(), 1);
-	positionPublisher_ = ArgosRosFootbot::nodeHandle->create_publisher<geometry_msgs::msg::PoseStamped>(positionTopic.str(), 1);
-	rabDataPublisher_ = ArgosRosFootbot::nodeHandle->create_publisher<std_msgs::msg::Float64MultiArray>(rabDataTopic.str(), 1);
-	rabPointPublisher_ = ArgosRosFootbot::nodeHandle->create_publisher<sensor_msgs::msg::PointCloud2>(rabPointTopic.str(), 1);
+	promixityPublisher_ = ArgosRosFootbot::nodeHandle->create_publisher<sensor_msgs::msg::PointCloud2>(proxTopic.str(), 10);
+	positionPublisher_ = ArgosRosFootbot::nodeHandle->create_publisher<geometry_msgs::msg::PoseStamped>(positionTopic.str(), 10);
+	rabDataPublisher_ = ArgosRosFootbot::nodeHandle->create_publisher<std_msgs::msg::Float64MultiArray>(rabDataTopic.str(), 10);
+	tfPublisher_ = ArgosRosFootbot::nodeHandle->create_publisher<tf2_msgs::msg::TFMessage>(tfTopic.str(), 10);
+
 	bool is_clock_publisher = (GetId() == "bot0");
 	if (is_clock_publisher)
 	{
@@ -199,55 +200,66 @@ void ArgosRosFootbot::ControlStep()
 	 *********************************************/
 	const CCI_RangeAndBearingSensor::TReadings &tRabReads = m_pcRABS->GetReadings();
 	std_msgs::msg::Float64MultiArray rabSensorData;
-	sensor_msgs::msg::PointCloud2 rabPointData;
-	// 设置头信息
-	rabPointData.header.stamp = rclcpp::Clock().now();
-	stringstream frame_id;
-	frame_id << GetId() << "/rab_sensor";
-	rabPointData.header.frame_id = frame_id.str();
-	rabPointData.height = 1; // 无组织点云
-	rabPointData.width = tRabReads.size();
-	rabPointData.is_dense = true;
-
-	// 定义字段
-	sensor_msgs::PointCloud2Modifier modifier(rabPointData);
-	modifier.setPointCloud2FieldsByString(1, "xyz");
-	modifier.resize(tRabReads.size());
-
-	// 填充点云数据
-	sensor_msgs::PointCloud2Iterator<float> iter_x(rabPointData, "x");
-	sensor_msgs::PointCloud2Iterator<float> iter_y(rabPointData, "y");
-	sensor_msgs::PointCloud2Iterator<float> iter_z(rabPointData, "z");
-
+	std::vector<geometry_msgs::msg::TransformStamped> transforms;
 	for (size_t i = 0; i < tRabReads.size(); ++i)
 	{
+		double range = tRabReads[i].Range / 100.0; // 单位转换（cm → m）
+		double h_bearing = tRabReads[i].HorizontalBearing.GetValue();
+		double v_bearing = tRabReads[i].VerticalBearing.GetValue();
 
-		//////to pointcloud2 type
-		double range = tRabReads[i].Range / 100;
-		double h_bearing = tRabReads[i].HorizontalBearing.GetValue(); // 水平角度
-		double v_bearing = tRabReads[i].VerticalBearing.GetValue();	  // 垂直角度
+		// 计算相对坐标
+		double x = range * std::cos(v_bearing) * std::cos(h_bearing);
+		double y = range * std::cos(v_bearing) * std::sin(h_bearing);
+		double z = range * std::sin(v_bearing);
 
-		// 转换为笛卡尔坐标
-		*iter_x = range * std::cos(v_bearing) * std::cos(h_bearing);
-		*iter_y = range * std::cos(v_bearing) * std::sin(h_bearing);
-		*iter_z = range * std::sin(v_bearing);
+		// 尝试提取第一个 double 作为 ID
+		double target_id = -1.0;
+		CByteArray cBuf_copy = tRabReads[i].Data;
 
-		// 迭代到下一个点
-		++iter_x;
-		++iter_y;
-		++iter_z;
-
-		CByteArray cBuf_copy;
-		cBuf_copy = tRabReads[i].Data;
+		bool first_value = true;
 		double extractedValue;
+
 		while (cBuf_copy.Size() >= sizeof(double))
-		{ // 每次提取一个 double
+		{
 			cBuf_copy >> extractedValue;
+
+			// 第一个值作为 ID，用于 child_frame 命名
+			if (first_value)
+			{
+				target_id = extractedValue;
+				first_value = false;
+			}
+
 			rabSensorData.data.push_back(extractedValue);
 		}
+
+		// 创建 TransformStamped
+		geometry_msgs::msg::TransformStamped tf_msg;
+		tf_msg.header.stamp = rclcpp::Clock().now();
+
+		std::stringstream parent_frame, child_frame;
+		parent_frame << GetId() << "/base_link";
+		child_frame << "bot" << static_cast<int>(target_id) << "/base_link";
+
+		tf_msg.header.frame_id = parent_frame.str();
+		tf_msg.child_frame_id = child_frame.str();
+
+		tf_msg.transform.translation.x = x;
+		tf_msg.transform.translation.y = y;
+		tf_msg.transform.translation.z = z;
+
+		// 没有方向信息就设为单位四元数
+		tf_msg.transform.rotation.x = 0.0;
+		tf_msg.transform.rotation.y = 0.0;
+		tf_msg.transform.rotation.z = 0.0;
+		tf_msg.transform.rotation.w = 1.0;
+
+		transforms.push_back(tf_msg);
 	}
 
-	rabPointPublisher_->publish(rabPointData);
+	tf2_msgs::msg::TFMessage tf_msg;
+	tf_msg.transforms = transforms;
+	tfPublisher_->publish(tf_msg);
 
 	rabDataPublisher_->publish(rabSensorData);
 
@@ -297,9 +309,9 @@ void ArgosRosFootbot::cmdRabCallback(const std_msgs::msg::Float64MultiArray &rab
 	{
 		double data = rabActuator.data[i];
 		cBuf << data;
-		std::cout << "get rab_actuator message from ros,value is :   " << rabActuator.data[i] << std::endl;
+		// std::cout << "get rab_actuator message from ros,value is :   " << rabActuator.data[i] << std::endl;
 	}
-	size_t SIZE = 120;
+	size_t SIZE = 24;
 	while (cBuf.Size() < SIZE)
 	{
 		double padding = 0.0;

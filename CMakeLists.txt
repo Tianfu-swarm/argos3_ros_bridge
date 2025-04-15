@@ -16,6 +16,8 @@ find_package(geometry_msgs REQUIRED)
 find_package(ARGoS REQUIRED)
 find_package(GSL REQUIRED)
 find_package(Lua REQUIRED)
+find_package(tf2_ros REQUIRED)
+
 
 include_directories(
   include
@@ -47,6 +49,7 @@ ament_target_dependencies(argos_ros_bot
   std_msgs
   sensor_msgs
   geometry_msgs
+  tf2_ros
 )
 
 install(TARGETS argos_ros_bot

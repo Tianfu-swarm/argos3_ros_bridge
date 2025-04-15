@@ -2,7 +2,7 @@
 <package format="3">
   <name>argos3_ros_bridge</name>
   <version>0.0.1</version>
-  <description>ARGoS 3 Footbot ROS 2 Plugin</description>
+  <description>argos2ros2</description>
 
   <maintainer email="tianfu.zhang@uni-konstanz.de">Tianfu</maintainer>
   <license>MIT</license>
@@ -13,6 +13,8 @@
   <depend>std_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
+  <depend>tf2_ros</depend>
+
 
   <export>
     <build_type>ament_cmake</build_type>
