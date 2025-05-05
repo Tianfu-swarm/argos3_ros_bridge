@@ -71,14 +71,8 @@ void ArgosRosFootbot::Init(TConfigurationNode &t_node)
 	cmdVelTopic << "/" << GetId() << "/cmd_vel";
 	cmdRabTopic << "/" << GetId() << "/rab_actuator";
 
-	cmdVelSubscriber_ = ArgosRosFootbot::nodeHandle->create_subscription<Twist>(
-		cmdVelTopic.str(),
-		1,
-		std::bind(&ArgosRosFootbot::cmdVelCallback, this, _1));
-	cmdRabSubscriber_ = ArgosRosFootbot::nodeHandle->create_subscription<std_msgs::msg::Float64MultiArray>(
-		cmdRabTopic.str(),
-		1,
-		std::bind(&ArgosRosFootbot::cmdRabCallback, this, _1));
+	cmdVelSubscriber_ = ArgosRosFootbot::nodeHandle->create_subscription<Twist>(cmdVelTopic.str(), 10, std::bind(&ArgosRosFootbot::cmdVelCallback, this, _1));
+	cmdRabSubscriber_ = ArgosRosFootbot::nodeHandle->create_subscription<std_msgs::msg::Float64MultiArray>(cmdRabTopic.str(), 10, std::bind(&ArgosRosFootbot::cmdRabCallback, this, _1));
 
 	/********************************
 	 * Get sensor/actuator handles
@@ -199,70 +193,74 @@ void ArgosRosFootbot::ControlStep()
 	 * Get readings from Range-And-Bearing-Sensor
 	 *********************************************/
 	const CCI_RangeAndBearingSensor::TReadings &tRabReads = m_pcRABS->GetReadings();
-	std_msgs::msg::Float64MultiArray rabSensorData;
-	std::vector<geometry_msgs::msg::TransformStamped> transforms;
-	for (size_t i = 0; i < tRabReads.size(); ++i)
+	if (!tRabReads.empty())
 	{
-		double range = tRabReads[i].Range / 100.0; // 单位转换（cm → m）
-		double h_bearing = tRabReads[i].HorizontalBearing.GetValue();
-		double v_bearing = tRabReads[i].VerticalBearing.GetValue();
-
-		// 计算相对坐标
-		double x = range * std::cos(v_bearing) * std::cos(h_bearing);
-		double y = range * std::cos(v_bearing) * std::sin(h_bearing);
-		double z = range * std::sin(v_bearing);
-
-		// 尝试提取第一个 double 作为 ID
-		double target_id = -1.0;
-		CByteArray cBuf_copy = tRabReads[i].Data;
-
-		bool first_value = true;
-		double extractedValue;
-
-		while (cBuf_copy.Size() >= sizeof(double))
+		std_msgs::msg::Float64MultiArray rabSensorData;
+		std::vector<geometry_msgs::msg::TransformStamped> transforms;
+		for (size_t i = 0; i < tRabReads.size(); ++i)
 		{
-			cBuf_copy >> extractedValue;
+			double range = tRabReads[i].Range / 100; // cm->m
+			double h_bearing = tRabReads[i].HorizontalBearing.GetValue();
+			double v_bearing = tRabReads[i].VerticalBearing.GetValue();
 
-			// 第一个值作为 ID，用于 child_frame 命名
-			if (first_value)
+			// 计算相对坐标
+			double x = range * std::cos(v_bearing) * std::cos(h_bearing);
+			double y = range * std::cos(v_bearing) * std::sin(h_bearing);
+			double z = range * std::sin(v_bearing);
+
+			// 尝试提取第一个 double 作为 ID
+			double target_id = -1.0;
+			CByteArray cBuf_copy = tRabReads[i].Data;
+
+			bool first_value = true;
+			double extractedValue;
+
+			while (cBuf_copy.Size() >= sizeof(double))
 			{
-				target_id = extractedValue;
-				first_value = false;
+				cBuf_copy >> extractedValue;
+
+				// 第一个值作为 ID，用于 child_frame 命名
+				if (first_value)
+				{
+					target_id = extractedValue;
+					first_value = false;
+				}
+
+				// std::cout << GetId() << "[RAB RECEIVE] Decoded value: " << extractedValue << std::endl;
+
+				rabSensorData.data.push_back(extractedValue);
 			}
 
-			rabSensorData.data.push_back(extractedValue);
+			// 创建 TransformStamped
+			geometry_msgs::msg::TransformStamped tf_msg;
+			tf_msg.header.stamp = rclcpp::Clock().now();
+
+			std::stringstream parent_frame, child_frame;
+			parent_frame << GetId() << "/base_link";
+			child_frame << "bot" << static_cast<int>(target_id) << "/base_link";
+
+			tf_msg.header.frame_id = parent_frame.str();
+			tf_msg.child_frame_id = child_frame.str();
+
+			tf_msg.transform.translation.x = x;
+			tf_msg.transform.translation.y = y;
+			tf_msg.transform.translation.z = z;
+
+			// 没有方向信息就设为单位四元数
+			tf_msg.transform.rotation.x = 0.0;
+			tf_msg.transform.rotation.y = 0.0;
+			tf_msg.transform.rotation.z = 0.0;
+			tf_msg.transform.rotation.w = 1.0;
+
+			transforms.push_back(tf_msg);
 		}
 
-		// 创建 TransformStamped
-		geometry_msgs::msg::TransformStamped tf_msg;
-		tf_msg.header.stamp = rclcpp::Clock().now();
+		tf2_msgs::msg::TFMessage tf_msg;
+		tf_msg.transforms = transforms;
+		tfPublisher_->publish(tf_msg);
 
-		std::stringstream parent_frame, child_frame;
-		parent_frame << GetId() << "/base_link";
-		child_frame << "bot" << static_cast<int>(target_id) << "/base_link";
-
-		tf_msg.header.frame_id = parent_frame.str();
-		tf_msg.child_frame_id = child_frame.str();
-
-		tf_msg.transform.translation.x = x;
-		tf_msg.transform.translation.y = y;
-		tf_msg.transform.translation.z = z;
-
-		// 没有方向信息就设为单位四元数
-		tf_msg.transform.rotation.x = 0.0;
-		tf_msg.transform.rotation.y = 0.0;
-		tf_msg.transform.rotation.z = 0.0;
-		tf_msg.transform.rotation.w = 1.0;
-
-		transforms.push_back(tf_msg);
+		rabDataPublisher_->publish(rabSensorData);
 	}
-
-	tf2_msgs::msg::TFMessage tf_msg;
-	tf_msg.transforms = transforms;
-	tfPublisher_->publish(tf_msg);
-
-	rabDataPublisher_->publish(rabSensorData);
-
 	/*********************************************
 	 * receive message from ros and send it to Left-Right-wheel-Actuator
 	 *********************************************/
@@ -276,8 +274,30 @@ void ArgosRosFootbot::ControlStep()
 	{
 		stepsSinceCallback++;
 	}
-	// std::cout << GetId() << ": left-wheel: " << leftSpeed << ": right-wheel: " << rightSpeed << std::endl;
+
 	m_pcWheels->SetLinearVelocity(leftSpeed, rightSpeed);
+	/*********************************************
+	 * setup rab actuator
+	 *********************************************/
+	CByteArray cBuf;
+	size_t maxBytes = m_pcRABA->GetSize();
+
+	if (!pendingRabData.empty())
+	{
+		for (double v : pendingRabData)
+		{
+			cBuf << v;
+		}
+	}
+
+	while (cBuf.Size() < maxBytes)
+	{
+		cBuf << static_cast<double>(-1.0);
+	}
+
+	m_pcRABA->SetData(cBuf);
+
+	pendingRabData.clear();
 }
 
 void ArgosRosFootbot::Reset()
@@ -302,22 +322,7 @@ void ArgosRosFootbot::cmdVelCallback(const Twist &twist)
 
 void ArgosRosFootbot::cmdRabCallback(const std_msgs::msg::Float64MultiArray &rabActuator)
 {
-
-	CByteArray cBuf;
-
-	for (size_t i = 0; i < rabActuator.data.size(); i++)
-	{
-		double data = rabActuator.data[i];
-		cBuf << data;
-		// std::cout << "get rab_actuator message from ros,value is :   " << rabActuator.data[i] << std::endl;
-	}
-	size_t SIZE = 24;
-	while (cBuf.Size() < SIZE)
-	{
-		double padding = 0.0;
-		cBuf << padding;
-	}
-	m_pcRABA->SetData(cBuf);
+	pendingRabData = rabActuator.data;
 }
 
 /*

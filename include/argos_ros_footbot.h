@@ -114,6 +114,7 @@ private:
 	// Most recent left and right wheel speeds, converted from the ROS twist
 	// message.
 	Real leftSpeed, rightSpeed;
+	std::vector<double> pendingRabData;
 
 public:
 	ArgosRosFootbot();
