@@ -26,11 +26,13 @@ std::shared_ptr<rclcpp::Node> initNode()
 std::shared_ptr<rclcpp::Node> ArgosRosFootbot::nodeHandle = initNode();
 
 ArgosRosFootbot::ArgosRosFootbot() : m_pcWheels(NULL),
-									 m_pcLight(NULL),
+									 //  m_pcLight(NULL),
 									 m_pcProximity(NULL),
 									 m_pcPosition(NULL),
 									 m_pcRABA(NULL),
 									 m_pcRABS(NULL),
+									 //  m_pcSRA(NULL),
+									 //  m_pcSRS(NULL),
 									 stopWithoutSubscriberCount(10),
 									 stepsSinceCallback(0),
 									 leftSpeed(0),
@@ -45,18 +47,20 @@ void ArgosRosFootbot::Init(TConfigurationNode &t_node)
 	/********************************
 	 * Create the topics to publish
 	 *******************************/
-	stringstream lightTopic, blobTopic, proxTopic, positionTopic, rabDataTopic, tfTopic;
-	lightTopic << "/" << GetId() << "/light";
+	stringstream lightTopic, blobTopic, proxTopic, positionTopic, rabDataTopic, tfTopic, radioTopic;
+	// lightTopic << "/" << GetId() << "/light";
 	blobTopic << "/" << GetId() << "/blob";
 	proxTopic << "/" << GetId() << "/proximity_point";
 	positionTopic << "/" << GetId() << "/pose";
 	rabDataTopic << "/" << GetId() << "/rab_sensor";
 	tfTopic << "/" << GetId() << "/rab_tf";
+	radioTopic << "/" << GetId() << "/radio_sensor";
 
 	promixityPublisher_ = ArgosRosFootbot::nodeHandle->create_publisher<sensor_msgs::msg::PointCloud2>(proxTopic.str(), 10);
 	positionPublisher_ = ArgosRosFootbot::nodeHandle->create_publisher<geometry_msgs::msg::PoseStamped>(positionTopic.str(), 10);
 	rabDataPublisher_ = ArgosRosFootbot::nodeHandle->create_publisher<std_msgs::msg::Float64MultiArray>(rabDataTopic.str(), 10);
 	tfPublisher_ = ArgosRosFootbot::nodeHandle->create_publisher<tf2_msgs::msg::TFMessage>(tfTopic.str(), 10);
+	radioDataPublisher_ = ArgosRosFootbot::nodeHandle->create_publisher<std_msgs::msg::Float64MultiArray>(radioTopic.str(), 10);
 
 	bool is_clock_publisher = (GetId() == "bot0");
 	if (is_clock_publisher)
@@ -67,27 +71,30 @@ void ArgosRosFootbot::Init(TConfigurationNode &t_node)
 	/*********************************
 	 * Create subscribers
 	 ********************************/
-	stringstream cmdVelTopic, cmdRabTopic, cmdLedTopic;
+	stringstream cmdVelTopic, rabActuatorTopic, radioActuatorTopic;
 	cmdVelTopic << "/" << GetId() << "/cmd_vel";
-	cmdRabTopic << "/" << GetId() << "/rab_actuator";
+	rabActuatorTopic << "/" << GetId() << "/rab_actuator";
+	radioActuatorTopic << "/" << GetId() << "/radio_actuator";
 
 	cmdVelSubscriber_ = ArgosRosFootbot::nodeHandle->create_subscription<Twist>(cmdVelTopic.str(), 10, std::bind(&ArgosRosFootbot::cmdVelCallback, this, _1));
-	cmdRabSubscriber_ = ArgosRosFootbot::nodeHandle->create_subscription<std_msgs::msg::Float64MultiArray>(cmdRabTopic.str(), 10, std::bind(&ArgosRosFootbot::cmdRabCallback, this, _1));
-
+	rabActuatorSubscriber_ = ArgosRosFootbot::nodeHandle->create_subscription<std_msgs::msg::Float64MultiArray>(rabActuatorTopic.str(), 10, std::bind(&ArgosRosFootbot::rabActuatorCallback, this, _1));
+	radioActuatorSubscriber_ = ArgosRosFootbot::nodeHandle->create_subscription<std_msgs::msg::Float64MultiArray>(radioActuatorTopic.str(), 10, std::bind(&ArgosRosFootbot::radioActuatorCallback, this, _1));
 	/********************************
 	 * Get sensor/actuator handles
 	 ********************************/
-	m_pcLight = GetSensor<CCI_FootBotLightSensor>("footbot_light");
+	// m_pcLight = GetSensor<CCI_FootBotLightSensor>("footbot_light");
 	m_pcProximity = GetSensor<CCI_FootBotProximitySensor>("footbot_proximity");
 
 	m_pcPosition = GetSensor<CCI_PositioningSensor>("positioning");
 	m_pcRABS = GetSensor<CCI_RangeAndBearingSensor>("range_and_bearing");
+	m_pcSRS = GetSensor<CCI_SimpleRadiosSensor>("simple_radios");
 
 	/********************************
 	 * Get actuator handles
 	 ********************************/
 	m_pcWheels = GetActuator<CCI_DifferentialSteeringActuator>("differential_steering");
 	m_pcRABA = GetActuator<CCI_RangeAndBearingActuator>("range_and_bearing");
+	m_pcSRA = GetActuator<CCI_SimpleRadiosActuator>("simple_radios");
 
 	/*
 	 * Other init stuff
@@ -190,6 +197,42 @@ void ArgosRosFootbot::ControlStep()
 	positionPublisher_->publish(bot_pose);
 
 	/*********************************************
+	 * Get readings from simple Radio
+	 *********************************************/
+	const auto &sensIfs = m_pcSRS->GetInterfaces();
+	if (!sensIfs.empty() && !sensIfs[0].Messages.empty())
+	{
+		for (const argos::CByteArray &raw : sensIfs[0].Messages)
+		{
+			// 把所有字节都放进 Float64MultiArray
+			std_msgs::msg::Float64MultiArray msg;
+			// 预留空间
+			msg.data.reserve(raw.Size());
+			for (size_t i = 0; i < raw.Size(); ++i)
+			{
+				msg.data.push_back(static_cast<double>(raw[i]));
+			}
+
+			std_msgs::msg::MultiArrayDimension dim;
+			dim.label = "bytes";
+			dim.size = static_cast<uint32_t>(raw.Size());
+			dim.stride = static_cast<uint32_t>(raw.Size());
+			msg.layout.dim.clear();
+			msg.layout.dim.push_back(dim);
+
+			// 发布
+			radioDataPublisher_->publish(msg);
+		}
+	}
+
+	// ——— 2) now queue up what you want to send this tick —————
+	auto &actIfs = m_pcSRA->GetInterfaces();
+	actIfs[0].Messages.clear();
+	CByteArray out;
+	out << (UInt8)1 << (UInt8)2 << (UInt8)3;
+	actIfs[0].Messages.push_back(out);
+
+	/*********************************************
 	 * Get readings from Range-And-Bearing-Sensor
 	 *********************************************/
 	const CCI_RangeAndBearingSensor::TReadings &tRabReads = m_pcRABS->GetReadings();
@@ -277,7 +320,7 @@ void ArgosRosFootbot::ControlStep()
 
 	m_pcWheels->SetLinearVelocity(leftSpeed, rightSpeed);
 	/*********************************************
-	 * setup rab actuator
+	 * boardcast data via rab actuator
 	 *********************************************/
 	CByteArray cBuf;
 	size_t maxBytes = m_pcRABA->GetSize();
@@ -298,6 +341,26 @@ void ArgosRosFootbot::ControlStep()
 	m_pcRABA->SetData(cBuf);
 
 	pendingRabData.clear();
+
+	/*********************************************
+	 * boardcast data via radio actuator
+	 *********************************************/
+
+	auto &radioActIfs = m_pcSRA->GetInterfaces();
+	radioActIfs[0].Messages.clear();
+
+	CByteArray outBuf;
+	for (double v : pendingRadioData.data)
+	{
+		outBuf << v;
+	}
+
+	radioActIfs[0].Messages.push_back(outBuf);
+
+	for (auto &v : pendingRadioData.data)
+	{
+		v = -1.0;
+	}
 }
 
 void ArgosRosFootbot::Reset()
@@ -320,9 +383,14 @@ void ArgosRosFootbot::cmdVelCallback(const Twist &twist)
 	stepsSinceCallback = 0;
 }
 
-void ArgosRosFootbot::cmdRabCallback(const std_msgs::msg::Float64MultiArray &rabActuator)
+void ArgosRosFootbot::rabActuatorCallback(const std_msgs::msg::Float64MultiArray &rabActuator)
 {
 	pendingRabData = rabActuator.data;
+}
+
+void ArgosRosFootbot::radioActuatorCallback(const std_msgs::msg::Float64MultiArray &radioActuator)
+{
+	pendingRadioData = radioActuator;
 }
 
 /*

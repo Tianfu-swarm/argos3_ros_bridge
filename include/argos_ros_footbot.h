@@ -17,6 +17,10 @@
 #include <argos3/plugins/robots/generic/control_interface/ci_range_and_bearing_actuator.h>
 /* Definition of the range-and-bearing sensor */
 #include <argos3/plugins/robots/generic/control_interface/ci_range_and_bearing_sensor.h>
+/* Definition of the simple-radio actuator */
+#include <argos3/plugins/robots/generic/control_interface/ci_simple_radios_actuator.h>
+/* Definition of the simple-radio sensor */
+#include <argos3/plugins/robots/generic/control_interface/ci_simple_radios_sensor.h>
 /* Definition of the foot-bot light sensor */
 #include <argos3/plugins/robots/foot-bot/control_interface/ci_footbot_light_sensor.h>
 /* Definition of the foot-bot proximity sensor */
@@ -53,6 +57,9 @@ using namespace std::chrono_literals;
 class ArgosRosFootbot : public CCI_Controller
 {
 private:
+	/************************************
+	 * Publishers
+	 ***********************************/
 	// Proximity sensor publisher
 	rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr promixityPublisher_;
 	// Position sensor publisher
@@ -61,18 +68,20 @@ private:
 	rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr rabDataPublisher_;
 	// sim clock publisher
 	rclcpp::Publisher<rosgraph_msgs::msg::Clock>::SharedPtr clockPublisher_;
-	//
+	// rab tf
 	rclcpp::Publisher<tf2_msgs::msg::TFMessage>::SharedPtr tfPublisher_;
+	// radio
+	rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr radioDataPublisher_;
 
 	/************************************
 	 * Subscribers
 	 ***********************************/
 	// Subscriber for cmd_vel (Twist message) topic.
 	rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmdVelSubscriber_;
-	// Subscriber for cmd_rab (Float64MultiArray) topic
-	rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr cmdRabSubscriber_;
-	// Subscriber for Actuator message) topic
-	rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr cmdActuatorSubscriber_;
+	// Subscriber for rab (Float64MultiArray) topic
+	rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr rabActuatorSubscriber_;
+	// Subscriber for radio (Float64MultiArray) topic
+	rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr radioActuatorSubscriber_;
 
 	rclcpp::TimerBase::SharedPtr timer_;
 
@@ -90,6 +99,10 @@ private:
 	CCI_RangeAndBearingActuator *m_pcRABA;
 	/* Pointer to the pose message */
 	geometry_msgs::msg::PoseStamped *m_pose;
+	/* Pointer to the range-and-bearing sensor */
+	CCI_SimpleRadiosSensor *m_pcSRS;
+	/* Pointer to the range-and-bearing actuator */
+	CCI_SimpleRadiosActuator *m_pcSRA;
 
 	// The following constant values were copied from the argos source tree from
 	// the file src/plugins/robots/foot-bot/simulator/footbot_entity.cpp
@@ -115,6 +128,7 @@ private:
 	// message.
 	Real leftSpeed, rightSpeed;
 	std::vector<double> pendingRabData;
+	std_msgs::msg::Float64MultiArray pendingRadioData;
 
 public:
 	ArgosRosFootbot();
@@ -150,13 +164,13 @@ public:
 	 */
 	void cmdVelCallback(const geometry_msgs::msg::Twist &twist);
 	/*
-	 * The callback method for getting new commanded packet on the cmd_packet topic.
+	 * The callback method for getting new commanded packet on the rabActuator topic.
 	 */
-	void cmdRabCallback(const std_msgs::msg::Float64MultiArray &rabActuator);
+	void rabActuatorCallback(const std_msgs::msg::Float64MultiArray &rabActuator);
 	/*
-	 * The callback method for getting new commanded led color on the cmd_led topic.
+	 * The callback method for getting new commanded packet on the radioActuator topic.
 	 */
-
+	void radioActuatorCallback(const std_msgs::msg::Float64MultiArray &radioActuator);
 	/*
 	 * The callback method for getting new commanded robot pose on the position topic.
 	 */
