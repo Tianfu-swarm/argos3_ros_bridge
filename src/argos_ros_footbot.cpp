@@ -115,10 +115,10 @@ void ArgosRosFootbot::ControlStep()
 	const auto &sim = argos::CSimulator::GetInstance();
 	argos::CPhysicsEngine &engine = sim.GetPhysicsEngine("dyn2d");
 	argos::Real sim_time = sim.GetSpace().GetSimulationClock() * engine.GetPhysicsClockTick();
-	rclcpp::Time ros_time(static_cast<uint64_t>(sim_time * 1e9)); // 仿真秒 -> 纳秒
+	rclcpp::Time ros_sim_time(static_cast<uint64_t>(sim_time * 1e9)); // 仿真秒 -> 纳秒
 
 	rosgraph_msgs::msg::Clock clock_msg;
-	clock_msg.clock = ros_time;
+	clock_msg.clock = ros_sim_time;
 	if (clockPublisher_)
 	{
 		clockPublisher_->publish(clock_msg);
@@ -133,7 +133,7 @@ void ArgosRosFootbot::ControlStep()
 	sensor_msgs::msg::PointCloud2 Proximity_point;
 
 	// 初始化 PointCloud2 消息
-	Proximity_point.header.stamp = rclcpp::Clock().now(); // 设置时间戳
+	Proximity_point.header.stamp = ros_sim_time; // 设置时间戳
 	std::stringstream Proximity_frame_id;
 	Proximity_frame_id << GetId() << "/Proximity_sensor";
 	Proximity_point.header.frame_id = Proximity_frame_id.str(); // 设置帧 ID (根据需要修改)
@@ -183,7 +183,7 @@ void ArgosRosFootbot::ControlStep()
 
 	geometry_msgs::msg::PoseStamped bot_pose;
 	bot_pose.header.frame_id = "map";
-	bot_pose.header.stamp = rclcpp::Clock().now();
+	bot_pose.header.stamp = ros_sim_time;
 
 	bot_pose.pose.position.x = tPosReads.Position.GetX();
 	bot_pose.pose.position.y = tPosReads.Position.GetY();
@@ -199,38 +199,28 @@ void ArgosRosFootbot::ControlStep()
 	/*********************************************
 	 * Get readings from simple Radio
 	 *********************************************/
-	const auto &sensIfs = m_pcSRS->GetInterfaces();
+	auto &sensIfs = const_cast<std::vector<argos::CCI_SimpleRadiosSensor::SInterface> &>(
+		m_pcSRS->GetInterfaces());
+
 	if (!sensIfs.empty() && !sensIfs[0].Messages.empty())
 	{
-		for (const argos::CByteArray &raw : sensIfs[0].Messages)
+		std_msgs::msg::Float64MultiArray msg;
+
+		for (auto buf : sensIfs[0].Messages)
 		{
-			// 把所有字节都放进 Float64MultiArray
-			std_msgs::msg::Float64MultiArray msg;
-			// 预留空间
-			msg.data.reserve(raw.Size());
-			for (size_t i = 0; i < raw.Size(); ++i)
-			{
-				msg.data.push_back(static_cast<double>(raw[i]));
-			}
+			double val;
+			buf >> val;
 
-			std_msgs::msg::MultiArrayDimension dim;
-			dim.label = "bytes";
-			dim.size = static_cast<uint32_t>(raw.Size());
-			dim.stride = static_cast<uint32_t>(raw.Size());
-			msg.layout.dim.clear();
-			msg.layout.dim.push_back(dim);
-
-			// 发布
-			radioDataPublisher_->publish(msg);
+			msg.data.push_back(val);
 		}
-	}
 
-	// ——— 2) now queue up what you want to send this tick —————
-	auto &actIfs = m_pcSRA->GetInterfaces();
-	actIfs[0].Messages.clear();
-	CByteArray out;
-	out << (UInt8)1 << (UInt8)2 << (UInt8)3;
-	actIfs[0].Messages.push_back(out);
+		radioDataPublisher_->publish(msg);
+	}
+	else
+	{
+		std_msgs::msg::Float64MultiArray msg;
+		radioDataPublisher_->publish(msg);
+	}
 
 	/*********************************************
 	 * Get readings from Range-And-Bearing-Sensor
@@ -269,14 +259,12 @@ void ArgosRosFootbot::ControlStep()
 					first_value = false;
 				}
 
-				// std::cout << GetId() << "[RAB RECEIVE] Decoded value: " << extractedValue << std::endl;
-
 				rabSensorData.data.push_back(extractedValue);
 			}
 
 			// 创建 TransformStamped
 			geometry_msgs::msg::TransformStamped tf_msg;
-			tf_msg.header.stamp = rclcpp::Clock().now();
+			tf_msg.header.stamp = ros_sim_time; // argos_time
 
 			std::stringstream parent_frame, child_frame;
 			parent_frame << GetId() << "/base_link";
@@ -300,8 +288,17 @@ void ArgosRosFootbot::ControlStep()
 
 		tf2_msgs::msg::TFMessage tf_msg;
 		tf_msg.transforms = transforms;
+
 		tfPublisher_->publish(tf_msg);
 
+		rabDataPublisher_->publish(rabSensorData);
+	}
+	else
+	{
+		tf2_msgs::msg::TFMessage empty_tf_msg;
+		tfPublisher_->publish(empty_tf_msg);
+
+		std_msgs::msg::Float64MultiArray rabSensorData;
 		rabDataPublisher_->publish(rabSensorData);
 	}
 	/*********************************************
@@ -345,21 +342,17 @@ void ArgosRosFootbot::ControlStep()
 	/*********************************************
 	 * boardcast data via radio actuator
 	 *********************************************/
-
 	auto &radioActIfs = m_pcSRA->GetInterfaces();
 	radioActIfs[0].Messages.clear();
-
-	CByteArray outBuf;
-	for (double v : pendingRadioData.data)
+	if (!pendingRadioData.data.empty())
 	{
-		outBuf << v;
-	}
-
-	radioActIfs[0].Messages.push_back(outBuf);
-
-	for (auto &v : pendingRadioData.data)
-	{
-		v = -1.0;
+		for (double v : pendingRadioData.data)
+		{
+			CByteArray outBuf;
+			outBuf << v;
+			radioActIfs[0].Messages.push_back(outBuf);
+		}
+		pendingRadioData.data.clear();
 	}
 }
 
