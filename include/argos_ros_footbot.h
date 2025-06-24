@@ -133,6 +133,8 @@ private:
 public:
 	ArgosRosFootbot();
 
+	std::shared_ptr<rclcpp::Node> nodeHandle_;
+
 	virtual ~ArgosRosFootbot();
 
 	/*

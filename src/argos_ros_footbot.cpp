@@ -6,25 +6,6 @@ using namespace std;
 using namespace geometry_msgs::msg;
 using std::placeholders::_1;
 
-/**
- * Initialize the node before creating the publishers
- * and subscribers. Otherwise we get a guard-error during
- * compilation if we initialize the node after.
- */
-std::shared_ptr<rclcpp::Node> initNode()
-{
-	int argc = 1;
-	char *argv = (char *)"";
-	if (rclcpp::get_contexts().empty())
-	{
-		rclcpp::init(argc, &argv);
-	}
-
-	return std::make_shared<rclcpp::Node>("argos_ros_node");
-}
-
-std::shared_ptr<rclcpp::Node> ArgosRosFootbot::nodeHandle = initNode();
-
 ArgosRosFootbot::ArgosRosFootbot() : m_pcWheels(NULL),
 									 //  m_pcLight(NULL),
 									 m_pcProximity(NULL),
@@ -44,6 +25,15 @@ ArgosRosFootbot::~ArgosRosFootbot() {}
 
 void ArgosRosFootbot::Init(TConfigurationNode &t_node)
 {
+	std::string node_name = GetId() + "_argos_ros_bridge";
+	int argc = 0;
+	char **argv = nullptr;
+	if (!rclcpp::ok())
+	{
+		rclcpp::init(argc, argv);
+	}
+	nodeHandle_ = std::make_shared<rclcpp::Node>(node_name);
+
 	/********************************
 	 * Create the topics to publish
 	 *******************************/
@@ -56,16 +46,16 @@ void ArgosRosFootbot::Init(TConfigurationNode &t_node)
 	tfTopic << "/" << GetId() << "/rab_tf";
 	radioTopic << "/" << GetId() << "/radio_sensor";
 
-	promixityPublisher_ = ArgosRosFootbot::nodeHandle->create_publisher<sensor_msgs::msg::PointCloud2>(proxTopic.str(), 10);
-	positionPublisher_ = ArgosRosFootbot::nodeHandle->create_publisher<geometry_msgs::msg::PoseStamped>(positionTopic.str(), 10);
-	rabDataPublisher_ = ArgosRosFootbot::nodeHandle->create_publisher<std_msgs::msg::Float64MultiArray>(rabDataTopic.str(), 10);
-	tfPublisher_ = ArgosRosFootbot::nodeHandle->create_publisher<tf2_msgs::msg::TFMessage>(tfTopic.str(), 10);
-	radioDataPublisher_ = ArgosRosFootbot::nodeHandle->create_publisher<std_msgs::msg::Float64MultiArray>(radioTopic.str(), 10);
+	promixityPublisher_ = nodeHandle_->create_publisher<sensor_msgs::msg::PointCloud2>(proxTopic.str(), 10);
+	positionPublisher_ = nodeHandle_->create_publisher<geometry_msgs::msg::PoseStamped>(positionTopic.str(), 10);
+	rabDataPublisher_ = nodeHandle_->create_publisher<std_msgs::msg::Float64MultiArray>(rabDataTopic.str(), 10);
+	tfPublisher_ = nodeHandle_->create_publisher<tf2_msgs::msg::TFMessage>(tfTopic.str(), 10);
+	radioDataPublisher_ = nodeHandle_->create_publisher<std_msgs::msg::Float64MultiArray>(radioTopic.str(), 10);
 
 	bool is_clock_publisher = (GetId() == "bot0");
 	if (is_clock_publisher)
 	{
-		clockPublisher_ = ArgosRosFootbot::nodeHandle->create_publisher<rosgraph_msgs::msg::Clock>("/clock", 10);
+		clockPublisher_ = nodeHandle_->create_publisher<rosgraph_msgs::msg::Clock>("/clock", 10);
 	}
 
 	/*********************************
@@ -76,9 +66,9 @@ void ArgosRosFootbot::Init(TConfigurationNode &t_node)
 	rabActuatorTopic << "/" << GetId() << "/rab_actuator";
 	radioActuatorTopic << "/" << GetId() << "/radio_actuator";
 
-	cmdVelSubscriber_ = ArgosRosFootbot::nodeHandle->create_subscription<Twist>(cmdVelTopic.str(), 10, std::bind(&ArgosRosFootbot::cmdVelCallback, this, _1));
-	rabActuatorSubscriber_ = ArgosRosFootbot::nodeHandle->create_subscription<std_msgs::msg::Float64MultiArray>(rabActuatorTopic.str(), 10, std::bind(&ArgosRosFootbot::rabActuatorCallback, this, _1));
-	radioActuatorSubscriber_ = ArgosRosFootbot::nodeHandle->create_subscription<std_msgs::msg::Float64MultiArray>(radioActuatorTopic.str(), 10, std::bind(&ArgosRosFootbot::radioActuatorCallback, this, _1));
+	cmdVelSubscriber_ = nodeHandle_->create_subscription<Twist>(cmdVelTopic.str(), 10, std::bind(&ArgosRosFootbot::cmdVelCallback, this, _1));
+	rabActuatorSubscriber_ = nodeHandle_->create_subscription<std_msgs::msg::Float64MultiArray>(rabActuatorTopic.str(), 10, std::bind(&ArgosRosFootbot::rabActuatorCallback, this, _1));
+	radioActuatorSubscriber_ = nodeHandle_->create_subscription<std_msgs::msg::Float64MultiArray>(radioActuatorTopic.str(), 10, std::bind(&ArgosRosFootbot::radioActuatorCallback, this, _1));
 	/********************************
 	 * Get sensor/actuator handles
 	 ********************************/
@@ -124,7 +114,8 @@ void ArgosRosFootbot::ControlStep()
 		clockPublisher_->publish(clock_msg);
 	}
 
-	rclcpp::spin_some(ArgosRosFootbot::nodeHandle);
+	// rclcpp::spin_some(ArgosRosFootbot::nodeHandle);
+	rclcpp::spin_some(nodeHandle_);
 
 	/***********************************
 	 * Get readings from proximity sensor
@@ -268,6 +259,11 @@ void ArgosRosFootbot::ControlStep()
 
 			std::stringstream parent_frame, child_frame;
 			parent_frame << GetId() << "/base_link";
+			if (target_id < 0)
+			{
+				continue;
+			}
+
 			child_frame << "bot" << static_cast<int>(target_id) << "/base_link";
 
 			tf_msg.header.frame_id = parent_frame.str();
@@ -290,7 +286,6 @@ void ArgosRosFootbot::ControlStep()
 		tf_msg.transforms = transforms;
 
 		tfPublisher_->publish(tf_msg);
-
 		rabDataPublisher_->publish(rabSensorData);
 	}
 	else
@@ -362,8 +357,6 @@ void ArgosRosFootbot::Reset()
 
 void ArgosRosFootbot::cmdVelCallback(const Twist &twist)
 {
-	// cout << "cmdVelCallback: " << GetId() << endl;
-
 	double v = twist.linear.x;		// Forward linear velocity
 	double omega = twist.angular.z; // Rotational (angular) velocity
 	double L = HALF_BASELINE * 2;	// Distance between wheels (wheelbase)
