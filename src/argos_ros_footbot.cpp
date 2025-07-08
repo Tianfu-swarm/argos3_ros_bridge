@@ -1,10 +1,10 @@
-
-
 /* Include the controller definition */
 #include "argos_ros_footbot.h"
 using namespace std;
 using namespace geometry_msgs::msg;
 using std::placeholders::_1;
+
+std::shared_ptr<rclcpp::Node> g_shared_ros_node = nullptr;
 
 ArgosRosFootbot::ArgosRosFootbot() : m_pcWheels(NULL),
 									 //  m_pcLight(NULL),
@@ -32,7 +32,17 @@ void ArgosRosFootbot::Init(TConfigurationNode &t_node)
 	{
 		rclcpp::init(argc, argv);
 	}
-	nodeHandle_ = std::make_shared<rclcpp::Node>(node_name);
+	if (!g_shared_ros_node)
+	{
+		int argc = 0;
+		char **argv = nullptr;
+		if (!rclcpp::ok())
+		{
+			rclcpp::init(argc, argv);
+		}
+		g_shared_ros_node = std::make_shared<rclcpp::Node>("argos3_ros__node");
+	}
+	nodeHandle_ = g_shared_ros_node;
 
 	/********************************
 	 * Create the topics to publish
