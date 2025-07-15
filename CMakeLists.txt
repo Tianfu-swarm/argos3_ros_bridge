@@ -13,10 +13,13 @@ find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
+
+
 find_package(ARGoS REQUIRED)
 find_package(GSL REQUIRED)
 find_package(Lua REQUIRED)
-find_package(tf2_ros REQUIRED)
+
 
 
 include_directories(
@@ -30,7 +33,9 @@ link_directories(
   ${ARGOS_LIBRARY_DIRS}
 )
 
-# Build the plugin as shared library
+#######################################
+# Plugin 1: Robot controller plugin
+#######################################
 add_library(argos_ros_bot SHARED
   src/argos_ros_footbot.cpp
 )
@@ -56,9 +61,39 @@ install(TARGETS argos_ros_bot
   LIBRARY DESTINATION lib
 )
 
+#######################################
+# Plugin 2: LoopFunctions plugin
+#######################################
+add_library(bridge_loop_function SHARED
+  src/bridge_loop_function.cpp
+)
+
+target_include_directories(bridge_loop_function PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+
+target_link_libraries(bridge_loop_function
+  ${ARGOS_LDFLAGS}
+)
+
+ament_target_dependencies(bridge_loop_function
+  rclcpp
+  std_msgs
+)
+
+install(TARGETS bridge_loop_function
+  LIBRARY DESTINATION lib
+)
+
+#######################################
+# Install headers
+#######################################
 install(DIRECTORY include/
   DESTINATION include/
 )
 
+#######################################
+# ament package
+#######################################
 ament_package()
 

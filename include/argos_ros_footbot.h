@@ -48,7 +48,6 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 #include "std_msgs/msg/bool.hpp"
-#include "rosgraph_msgs/msg/clock.hpp"
 #include <tf2_ros/transform_broadcaster.h>
 
 using namespace argos;
@@ -66,8 +65,7 @@ private:
 	rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr positionPublisher_;
 	// rab data from boardcatsing
 	rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr rabDataPublisher_;
-	// sim clock publisher
-	rclcpp::Publisher<rosgraph_msgs::msg::Clock>::SharedPtr clockPublisher_;
+
 	// rab tf
 	rclcpp::Publisher<tf2_msgs::msg::TFMessage>::SharedPtr tfPublisher_;
 	// radio

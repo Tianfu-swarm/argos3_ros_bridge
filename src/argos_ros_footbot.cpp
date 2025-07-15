@@ -4,8 +4,6 @@ using namespace std;
 using namespace geometry_msgs::msg;
 using std::placeholders::_1;
 
-std::shared_ptr<rclcpp::Node> g_shared_ros_node = nullptr;
-
 ArgosRosFootbot::ArgosRosFootbot() : m_pcWheels(NULL),
 									 //  m_pcLight(NULL),
 									 m_pcProximity(NULL),
@@ -25,24 +23,17 @@ ArgosRosFootbot::~ArgosRosFootbot() {}
 
 void ArgosRosFootbot::Init(TConfigurationNode &t_node)
 {
-	std::string node_name = GetId() + "_argos_ros_bridge";
 	int argc = 0;
 	char **argv = nullptr;
 	if (!rclcpp::ok())
 	{
 		rclcpp::init(argc, argv);
 	}
-	if (!g_shared_ros_node)
-	{
-		int argc = 0;
-		char **argv = nullptr;
-		if (!rclcpp::ok())
-		{
-			rclcpp::init(argc, argv);
-		}
-		g_shared_ros_node = std::make_shared<rclcpp::Node>("argos3_ros__node");
-	}
-	nodeHandle_ = g_shared_ros_node;
+
+	UInt32 num_threads = argos::CSimulator::GetInstance().GetNumThreads();
+
+	std::string node_name = GetId() + "_argos3_ros_bridge";
+	nodeHandle_ = std::make_shared<rclcpp::Node>(node_name);
 
 	/********************************
 	 * Create the topics to publish
@@ -61,12 +52,6 @@ void ArgosRosFootbot::Init(TConfigurationNode &t_node)
 	rabDataPublisher_ = nodeHandle_->create_publisher<std_msgs::msg::Float64MultiArray>(rabDataTopic.str(), 10);
 	tfPublisher_ = nodeHandle_->create_publisher<tf2_msgs::msg::TFMessage>(tfTopic.str(), 10);
 	radioDataPublisher_ = nodeHandle_->create_publisher<std_msgs::msg::Float64MultiArray>(radioTopic.str(), 10);
-
-	bool is_clock_publisher = (GetId() == "bot0");
-	if (is_clock_publisher)
-	{
-		clockPublisher_ = nodeHandle_->create_publisher<rosgraph_msgs::msg::Clock>("/clock", 10);
-	}
 
 	/*********************************
 	 * Create subscribers
@@ -116,13 +101,6 @@ void ArgosRosFootbot::ControlStep()
 	argos::CPhysicsEngine &engine = sim.GetPhysicsEngine("dyn2d");
 	argos::Real sim_time = sim.GetSpace().GetSimulationClock() * engine.GetPhysicsClockTick();
 	rclcpp::Time ros_sim_time(static_cast<uint64_t>(sim_time * 1e9)); // 仿真秒 -> 纳秒
-
-	rosgraph_msgs::msg::Clock clock_msg;
-	clock_msg.clock = ros_sim_time;
-	if (clockPublisher_)
-	{
-		clockPublisher_->publish(clock_msg);
-	}
 
 	// rclcpp::spin_some(ArgosRosFootbot::nodeHandle);
 	rclcpp::spin_some(nodeHandle_);
@@ -198,15 +176,55 @@ void ArgosRosFootbot::ControlStep()
 	positionPublisher_->publish(bot_pose);
 
 	/*********************************************
+	 * boardcast data via rab actuator
+	 *********************************************/
+
+	CByteArray cBuf;
+	size_t maxBytes = m_pcRABA->GetSize();
+
+	if (!pendingRabData.empty())
+	{
+		for (double v : pendingRabData)
+		{
+			cBuf << v;
+		}
+	}
+
+	while (cBuf.Size() < maxBytes)
+	{
+		cBuf << static_cast<double>(-1.0);
+	}
+
+	m_pcRABA->SetData(cBuf);
+
+	pendingRabData.clear();
+
+	/*********************************************
+	 * boardcast data via radio actuator
+	 *********************************************/
+
+	auto &radioActIfs = m_pcSRA->GetInterfaces();
+	radioActIfs[0].Messages.clear();
+	if (!pendingRadioData.data.empty())
+	{
+
+		for (double v : pendingRadioData.data)
+		{
+			CByteArray outBuf;
+			outBuf << v;
+			radioActIfs[0].Messages.push_back(outBuf);
+		}
+		pendingRadioData.data.clear();
+	}
+
+	/*********************************************
 	 * Get readings from simple Radio
 	 *********************************************/
-	auto &sensIfs = const_cast<std::vector<argos::CCI_SimpleRadiosSensor::SInterface> &>(
-		m_pcSRS->GetInterfaces());
 
+	auto &sensIfs = const_cast<std::vector<argos::CCI_SimpleRadiosSensor::SInterface> &>(m_pcSRS->GetInterfaces());
+	std_msgs::msg::Float64MultiArray msg;
 	if (!sensIfs.empty() && !sensIfs[0].Messages.empty())
 	{
-		std_msgs::msg::Float64MultiArray msg;
-
 		for (auto buf : sensIfs[0].Messages)
 		{
 			double val;
@@ -214,14 +232,19 @@ void ArgosRosFootbot::ControlStep()
 
 			msg.data.push_back(val);
 		}
+		sensIfs[0].Messages.clear();
+	}
 
-		radioDataPublisher_->publish(msg);
-	}
-	else
-	{
-		std_msgs::msg::Float64MultiArray msg;
-		radioDataPublisher_->publish(msg);
-	}
+	radioDataPublisher_->publish(msg);
+
+	// std::cout << "[argos_bridge_" << GetId() << " ][" << ros_sim_time.seconds() << "] Received from sensor and send to ros: [";
+	// for (size_t i = 0; i < msg.data.size(); ++i)
+	// {
+	// 	std::cout << msg.data[i];
+	// 	if (i != msg.data.size() - 1)
+	// 		std::cout << ", ";
+	// }
+	// std::cout << "]" << std::endl;
 
 	/*********************************************
 	 * Get readings from Range-And-Bearing-Sensor
@@ -310,6 +333,7 @@ void ArgosRosFootbot::ControlStep()
 	 * receive message from ros and send it to Left-Right-wheel-Actuator
 	 *********************************************/
 	// If we haven't heard from the subscriber in a while, set the speed to zero.
+
 	if (stepsSinceCallback > stopWithoutSubscriberCount)
 	{
 		leftSpeed = 0;
@@ -321,44 +345,6 @@ void ArgosRosFootbot::ControlStep()
 	}
 
 	m_pcWheels->SetLinearVelocity(leftSpeed, rightSpeed);
-	/*********************************************
-	 * boardcast data via rab actuator
-	 *********************************************/
-	CByteArray cBuf;
-	size_t maxBytes = m_pcRABA->GetSize();
-
-	if (!pendingRabData.empty())
-	{
-		for (double v : pendingRabData)
-		{
-			cBuf << v;
-		}
-	}
-
-	while (cBuf.Size() < maxBytes)
-	{
-		cBuf << static_cast<double>(-1.0);
-	}
-
-	m_pcRABA->SetData(cBuf);
-
-	pendingRabData.clear();
-
-	/*********************************************
-	 * boardcast data via radio actuator
-	 *********************************************/
-	auto &radioActIfs = m_pcSRA->GetInterfaces();
-	radioActIfs[0].Messages.clear();
-	if (!pendingRadioData.data.empty())
-	{
-		for (double v : pendingRadioData.data)
-		{
-			CByteArray outBuf;
-			outBuf << v;
-			radioActIfs[0].Messages.push_back(outBuf);
-		}
-		pendingRadioData.data.clear();
-	}
 }
 
 void ArgosRosFootbot::Reset()
@@ -373,6 +359,7 @@ void ArgosRosFootbot::cmdVelCallback(const Twist &twist)
 	double R = WHEEL_RADIUS;		// Wheel radius
 
 	// Calculate left and right wheel speeds using differential drive kinematics
+
 	leftSpeed = (v - (L / 2) * omega) / R;
 	rightSpeed = (v + (L / 2) * omega) / R;
 
@@ -381,11 +368,13 @@ void ArgosRosFootbot::cmdVelCallback(const Twist &twist)
 
 void ArgosRosFootbot::rabActuatorCallback(const std_msgs::msg::Float64MultiArray &rabActuator)
 {
+
 	pendingRabData = rabActuator.data;
 }
 
 void ArgosRosFootbot::radioActuatorCallback(const std_msgs::msg::Float64MultiArray &radioActuator)
 {
+
 	pendingRadioData = radioActuator;
 }
 
