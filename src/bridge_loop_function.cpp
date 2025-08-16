@@ -56,31 +56,45 @@ void CBridgeLoopFunction::PreStep()
     rclcpp::Time expected_stamp(static_cast<int64_t>(step * time_per_step_sec * 1e9));
     const double expected_secs = expected_stamp.seconds();
 
-    constexpr auto wait_timeout = std::chrono::milliseconds(100); // 每次等待20ms
-    const int max_attempts = 10;
+    constexpr auto wait_timeout = std::chrono::milliseconds(10); // 等待
+    const int max_attempts = 20;
 
     bool condition_met = false;
+
+    std::vector<std::string> missing_robots;
 
     for (int attempt = 0; attempt < max_attempts; ++attempt)
     {
         condition_met = CV_.wait_for(lock, wait_timeout, [&]()
                                      {
-            for (const auto &pair : TriggerTimestamps_)
+        missing_robots.clear();
+
+        for (const auto &pair : TriggerTimestamps_)
+        {
+            double trigger_secs = pair.second.seconds();
+            if (std::abs(trigger_secs - expected_secs) - time_per_step_sec > 1e-6)
             {
-                double trigger_secs = pair.second.seconds();
-                if (std::abs(trigger_secs - expected_secs) - time_per_step_sec > 1e-6)
-                {
-                    return false;
-                }
+                missing_robots.push_back(pair.first);
             }
-            return true; });
+        }
+
+        return missing_robots.empty(); });
 
         if (condition_met)
             break;
 
-        // 每次失败后，重发 trigger
         std::cout << "[LoopFunction] Re-sending trigger at attempt "
                   << (attempt + 1) << " for time " << expected_secs << std::endl;
+
+        if (!missing_robots.empty())
+        {
+            std::cout << "[LoopFunction] Missing triggers from robots: ";
+            for (const auto &id : missing_robots)
+            {
+                std::cout << id << " ";
+            }
+            std::cout << std::endl;
+        }
 
         std_msgs::msg::Header msg;
         msg.stamp = expected_stamp;
