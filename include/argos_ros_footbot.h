@@ -27,6 +27,8 @@
 #include <argos3/plugins/robots/foot-bot/control_interface/ci_footbot_proximity_sensor.h>
 /* Definition of the positioning sensor */
 #include <argos3/plugins/robots/generic/control_interface/ci_positioning_sensor.h>
+/* Definition of the base ground sensor */
+#include <argos3/plugins/robots/foot-bot/control_interface/ci_footbot_base_ground_sensor.h>
 
 /* Function definitions for XML parsing */
 #include <argos3/core/utility/configuration/argos_configuration.h>
@@ -65,11 +67,12 @@ private:
 	rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr positionPublisher_;
 	// rab data from boardcatsing
 	rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr rabDataPublisher_;
-
-	// rab tf
+	// range and bearing tf
 	rclcpp::Publisher<tf2_msgs::msg::TFMessage>::SharedPtr tfPublisher_;
-	// radio
+	// simple_radio
 	rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr radioDataPublisher_;
+	// ground sensor
+	rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr baseGroundPublisher_;
 
 	/************************************
 	 * Subscribers
@@ -101,6 +104,8 @@ private:
 	CCI_SimpleRadiosSensor *m_pcSRS;
 	/* Pointer to the range-and-bearing actuator */
 	CCI_SimpleRadiosActuator *m_pcSRA;
+	/* Pointer to the base ground sensor */
+	CCI_FootBotBaseGroundSensor *m_pcBaseGround;
 
 	// The following constant values were copied from the argos source tree from
 	// the file src/plugins/robots/foot-bot/simulator/footbot_entity.cpp

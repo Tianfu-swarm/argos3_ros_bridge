@@ -57,7 +57,7 @@ void CBridgeLoopFunction::PreStep()
     const double expected_secs = expected_stamp.seconds();
 
     constexpr auto wait_timeout = std::chrono::milliseconds(10); // 等待
-    const int max_attempts = 20;
+    const int max_attempts = 5;
 
     bool condition_met = false;
 
@@ -83,29 +83,29 @@ void CBridgeLoopFunction::PreStep()
         if (condition_met)
             break;
 
-        std::cout << "[LoopFunction] Re-sending trigger at attempt "
-                  << (attempt + 1) << " for time " << expected_secs << std::endl;
+        // std::cout << "[LoopFunction] Re-sending trigger at attempt "
+        //           << (attempt + 1) << " for time " << expected_secs << std::endl;
 
-        if (!missing_robots.empty())
-        {
-            std::cout << "[LoopFunction] Missing triggers from robots: ";
-            for (const auto &id : missing_robots)
-            {
-                std::cout << id << " ";
-            }
-            std::cout << std::endl;
-        }
+        // if (!missing_robots.empty())
+        // {
+        //     std::cout << "[LoopFunction] Missing triggers from robots: ";
+        //     for (const auto &id : missing_robots)
+        //     {
+        //         std::cout << id << " ";
+        //     }
+        //     std::cout << std::endl;
+        // }
 
         std_msgs::msg::Header msg;
         msg.stamp = expected_stamp;
         TriggerPublisher_->publish(msg);
     }
 
-    if (!condition_met)
-    {
-        std::cerr << "[LoopFunction] Timeout waiting for triggers at time "
-                  << expected_secs << ", skipping." << std::endl;
-    }
+    // if (!condition_met)
+    // {
+    //     std::cerr << "[LoopFunction] Timeout waiting for triggers at time "
+    //               << expected_secs << ", skipping." << std::endl;
+    // }
 
     const auto &sim = argos::CSimulator::GetInstance();
     argos::CPhysicsEngine &engine = sim.GetPhysicsEngine("dyn2d");

@@ -10,6 +10,7 @@ ArgosRosFootbot::ArgosRosFootbot() : m_pcWheels(NULL),
 									 m_pcPosition(NULL),
 									 m_pcRABA(NULL),
 									 m_pcRABS(NULL),
+									 m_pcBaseGround(NULL),
 									 //  m_pcSRA(NULL),
 									 //  m_pcSRS(NULL),
 									 stopWithoutSubscriberCount(10),
@@ -38,7 +39,7 @@ void ArgosRosFootbot::Init(TConfigurationNode &t_node)
 	/********************************
 	 * Create the topics to publish
 	 *******************************/
-	stringstream lightTopic, blobTopic, proxTopic, positionTopic, rabDataTopic, tfTopic, radioTopic;
+	stringstream lightTopic, blobTopic, proxTopic, positionTopic, rabDataTopic, tfTopic, radioTopic, groundTopic;
 	// lightTopic << "/" << GetId() << "/light";
 	blobTopic << "/" << GetId() << "/blob";
 	proxTopic << "/" << GetId() << "/proximity_point";
@@ -46,12 +47,14 @@ void ArgosRosFootbot::Init(TConfigurationNode &t_node)
 	rabDataTopic << "/" << GetId() << "/rab_sensor";
 	tfTopic << "/" << GetId() << "/rab_tf";
 	radioTopic << "/" << GetId() << "/radio_sensor";
+	groundTopic << "/" << GetId() << "/base_ground_sensor";
 
 	promixityPublisher_ = nodeHandle_->create_publisher<sensor_msgs::msg::PointCloud2>(proxTopic.str(), 10);
 	positionPublisher_ = nodeHandle_->create_publisher<geometry_msgs::msg::PoseStamped>(positionTopic.str(), 10);
 	rabDataPublisher_ = nodeHandle_->create_publisher<std_msgs::msg::Float64MultiArray>(rabDataTopic.str(), 10);
 	tfPublisher_ = nodeHandle_->create_publisher<tf2_msgs::msg::TFMessage>(tfTopic.str(), 10);
 	radioDataPublisher_ = nodeHandle_->create_publisher<std_msgs::msg::Float64MultiArray>(radioTopic.str(), 10);
+	baseGroundPublisher_ = nodeHandle_->create_publisher<std_msgs::msg::Float64MultiArray>(groundTopic.str(), 10);
 
 	/*********************************
 	 * Create subscribers
@@ -69,10 +72,10 @@ void ArgosRosFootbot::Init(TConfigurationNode &t_node)
 	 ********************************/
 	// m_pcLight = GetSensor<CCI_FootBotLightSensor>("footbot_light");
 	m_pcProximity = GetSensor<CCI_FootBotProximitySensor>("footbot_proximity");
-
 	m_pcPosition = GetSensor<CCI_PositioningSensor>("positioning");
 	m_pcRABS = GetSensor<CCI_RangeAndBearingSensor>("range_and_bearing");
 	m_pcSRS = GetSensor<CCI_SimpleRadiosSensor>("simple_radios");
+	m_pcBaseGround = GetSensor<CCI_FootBotBaseGroundSensor>("footbot_base_ground");
 
 	/********************************
 	 * Get actuator handles
@@ -106,6 +109,23 @@ void ArgosRosFootbot::ControlStep()
 	rclcpp::spin_some(nodeHandle_);
 
 	/***********************************
+	 * Get readings from ground sensor
+	 ***********************************/
+	// 取 ground sensor 数值
+	const auto &r = m_pcBaseGround->GetReadings(); // TReadings, size=8（见头文件注释顺序）
+
+	// 填充 ROS2 消息
+	std_msgs::msg::Float64MultiArray ground_msg;
+	ground_msg.data.reserve(r.size());
+	for (const auto &s : r)
+	{
+		ground_msg.data.push_back(static_cast<double>(s.Value));
+	}
+
+	// 发布
+	baseGroundPublisher_->publish(ground_msg);
+
+	/***********************************
 	 * Get readings from proximity sensor
 	 ***********************************/
 	const CCI_FootBotProximitySensor::TReadings &tProxReads = m_pcProximity->GetReadings();
@@ -128,8 +148,8 @@ void ArgosRosFootbot::ControlStep()
 	sensor_msgs::PointCloud2Iterator<float> proximity_iter_y(Proximity_point, "y");
 	sensor_msgs::PointCloud2Iterator<float> proximity_iter_z(Proximity_point, "z");
 
-	// 假设已知衰减系数 λ
-	double lambda = 1.0;
+	// 衰减系数 λ
+	const double Rmax = 0.10; // footbot 近红外量程 10 cm
 
 	for (size_t i = 0; i < tProxReads.size(); ++i)
 	{
@@ -139,8 +159,8 @@ void ArgosRosFootbot::ControlStep()
 			continue;
 		}
 
-		double range = -std::log(tProxReads[i].Value) / lambda; // 计算实际距离
-		double angle = tProxReads[i].Angle.GetValue();			// 获取角度（单位：弧度）
+		double range = (1.0 - tProxReads[i].Value) * (Rmax / 0.9); // 计算实际距离
+		double angle = tProxReads[i].Angle.GetValue();			   // 获取角度（单位：弧度）
 
 		// 将距离和角度转换为笛卡尔坐标
 		*proximity_iter_x = range * cos(angle); // 计算 x 坐标
