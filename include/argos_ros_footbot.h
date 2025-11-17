@@ -29,6 +29,8 @@
 #include <argos3/plugins/robots/generic/control_interface/ci_positioning_sensor.h>
 /* Definition of the base ground sensor */
 #include <argos3/plugins/robots/foot-bot/control_interface/ci_footbot_base_ground_sensor.h>
+/* Definition of the motor ground sensor */
+#include <argos3/plugins/robots/foot-bot/control_interface/ci_footbot_motor_ground_sensor.h>
 
 /* Function definitions for XML parsing */
 #include <argos3/core/utility/configuration/argos_configuration.h>
@@ -71,8 +73,10 @@ private:
 	rclcpp::Publisher<tf2_msgs::msg::TFMessage>::SharedPtr tfPublisher_;
 	// simple_radio
 	rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr radioDataPublisher_;
-	// ground sensor
+	// base ground sensor
 	rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr baseGroundPublisher_;
+	// motor ground sensor
+	rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr motorGroundPublisher_;
 
 	/************************************
 	 * Subscribers
@@ -106,6 +110,8 @@ private:
 	CCI_SimpleRadiosActuator *m_pcSRA;
 	/* Pointer to the base ground sensor */
 	CCI_FootBotBaseGroundSensor *m_pcBaseGround;
+	/* Pointer to the motor ground sensor */
+	CCI_FootBotMotorGroundSensor *m_pcMotorGround;
 
 	// The following constant values were copied from the argos source tree from
 	// the file src/plugins/robots/foot-bot/simulator/footbot_entity.cpp
@@ -180,8 +186,6 @@ public:
 	 * The callback method for getting new commanded robot pose on the position topic.
 	 */
 	void cmdPoseCallback(const geometry_msgs::msg::PoseStamped &pose);
-
-	static std::shared_ptr<rclcpp::Node> nodeHandle;
 };
 
 #endif /* ARGOS_ROS_FOOTBOT_H_ */

@@ -11,6 +11,7 @@ ArgosRosFootbot::ArgosRosFootbot() : m_pcWheels(NULL),
 									 m_pcRABA(NULL),
 									 m_pcRABS(NULL),
 									 m_pcBaseGround(NULL),
+									 m_pcMotorGround(NULL),
 									 //  m_pcSRA(NULL),
 									 //  m_pcSRS(NULL),
 									 stopWithoutSubscriberCount(10),
@@ -39,7 +40,7 @@ void ArgosRosFootbot::Init(TConfigurationNode &t_node)
 	/********************************
 	 * Create the topics to publish
 	 *******************************/
-	stringstream lightTopic, blobTopic, proxTopic, positionTopic, rabDataTopic, tfTopic, radioTopic, groundTopic;
+	stringstream lightTopic, blobTopic, proxTopic, positionTopic, rabDataTopic, tfTopic, radioTopic, groundTopic, motorGroundTopic;
 	// lightTopic << "/" << GetId() << "/light";
 	blobTopic << "/" << GetId() << "/blob";
 	proxTopic << "/" << GetId() << "/proximity_point";
@@ -48,6 +49,7 @@ void ArgosRosFootbot::Init(TConfigurationNode &t_node)
 	tfTopic << "/" << GetId() << "/rab_tf";
 	radioTopic << "/" << GetId() << "/radio_sensor";
 	groundTopic << "/" << GetId() << "/base_ground_sensor";
+	motorGroundTopic << "/" << GetId() << "/motor_ground_sensor";
 
 	promixityPublisher_ = nodeHandle_->create_publisher<sensor_msgs::msg::PointCloud2>(proxTopic.str(), 10);
 	positionPublisher_ = nodeHandle_->create_publisher<geometry_msgs::msg::PoseStamped>(positionTopic.str(), 10);
@@ -55,11 +57,13 @@ void ArgosRosFootbot::Init(TConfigurationNode &t_node)
 	tfPublisher_ = nodeHandle_->create_publisher<tf2_msgs::msg::TFMessage>(tfTopic.str(), 10);
 	radioDataPublisher_ = nodeHandle_->create_publisher<std_msgs::msg::Float64MultiArray>(radioTopic.str(), 10);
 	baseGroundPublisher_ = nodeHandle_->create_publisher<std_msgs::msg::Float64MultiArray>(groundTopic.str(), 10);
+	motorGroundPublisher_ = nodeHandle_->create_publisher<std_msgs::msg::Float64MultiArray>(motorGroundTopic.str(), 10);
 
 	/*********************************
 	 * Create subscribers
 	 ********************************/
-	stringstream cmdVelTopic, rabActuatorTopic, radioActuatorTopic;
+	stringstream cmdVelTopic,
+		rabActuatorTopic, radioActuatorTopic;
 	cmdVelTopic << "/" << GetId() << "/cmd_vel";
 	rabActuatorTopic << "/" << GetId() << "/rab_actuator";
 	radioActuatorTopic << "/" << GetId() << "/radio_actuator";
@@ -76,6 +80,7 @@ void ArgosRosFootbot::Init(TConfigurationNode &t_node)
 	m_pcRABS = GetSensor<CCI_RangeAndBearingSensor>("range_and_bearing");
 	m_pcSRS = GetSensor<CCI_SimpleRadiosSensor>("simple_radios");
 	m_pcBaseGround = GetSensor<CCI_FootBotBaseGroundSensor>("footbot_base_ground");
+	m_pcMotorGround = GetSensor<CCI_FootBotMotorGroundSensor>("footbot_motor_ground");
 
 	/********************************
 	 * Get actuator handles
@@ -109,7 +114,7 @@ void ArgosRosFootbot::ControlStep()
 	rclcpp::spin_some(nodeHandle_);
 
 	/***********************************
-	 * Get readings from ground sensor
+	 * Get readings from base ground sensor
 	 ***********************************/
 	// 取 ground sensor 数值
 	const auto &r = m_pcBaseGround->GetReadings(); // TReadings, size=8（见头文件注释顺序）
@@ -124,6 +129,19 @@ void ArgosRosFootbot::ControlStep()
 
 	// 发布
 	baseGroundPublisher_->publish(ground_msg);
+
+	/***********************************
+	 * Get readings from motor ground sensor
+	 ***********************************/
+	if (m_pcMotorGround)
+	{
+		const auto &mg = m_pcMotorGround->GetReadings(); // TReadings, size=4
+		std_msgs::msg::Float64MultiArray msg;
+		msg.data.reserve(mg.size());
+		for (const auto &s : mg)
+			msg.data.push_back(static_cast<double>(s.Value));
+		motorGroundPublisher_->publish(msg);
+	}
 
 	/***********************************
 	 * Get readings from proximity sensor
@@ -273,70 +291,80 @@ void ArgosRosFootbot::ControlStep()
 	if (!tRabReads.empty())
 	{
 		std_msgs::msg::Float64MultiArray rabSensorData;
+		rabSensorData.data.clear();
+		rabSensorData.data.reserve(tRabReads.size() * 8); // 预留，避免频繁扩容
+
 		std::vector<geometry_msgs::msg::TransformStamped> transforms;
+		transforms.clear();
+		transforms.reserve(tRabReads.size());
+
+		const std::string parent_frame = GetId() + std::string("/base_link");
+
+		// 可选：限制最多发布的邻居 TF 数，减轻高密度压力
+		constexpr size_t MAX_TF_NEIGHBORS = 64;
+
 		for (size_t i = 0; i < tRabReads.size(); ++i)
 		{
-			double range = tRabReads[i].Range / 100; // cm->m
+			double range = tRabReads[i].Range / 100.0; // cm->m
 			double h_bearing = tRabReads[i].HorizontalBearing.GetValue();
 			double v_bearing = tRabReads[i].VerticalBearing.GetValue();
 
-			// 计算相对坐标
-			double x = range * std::cos(v_bearing) * std::cos(h_bearing);
-			double y = range * std::cos(v_bearing) * std::sin(h_bearing);
-			double z = range * std::sin(v_bearing);
+			const double ch = std::cos(h_bearing);
+			const double sh = std::sin(h_bearing);
+			const double cv = std::cos(v_bearing);
+			const double sv = std::sin(v_bearing);
 
-			// 尝试提取第一个 double 作为 ID
+			const double x = range * cv * ch;
+			const double y = range * cv * sh;
+			const double z = range * sv;
+
+			// 只提取“有效载荷”，遇到 padding（<0）立刻停止
 			double target_id = -1.0;
-			CByteArray cBuf_copy = tRabReads[i].Data;
+			CByteArray buf = tRabReads[i].Data; // 拷贝一份再读，避免破坏原数据
+			bool first = true;
 
-			bool first_value = true;
-			double extractedValue;
-
-			while (cBuf_copy.Size() >= sizeof(double))
+			while (buf.Size() >= sizeof(double))
 			{
-				cBuf_copy >> extractedValue;
+				double v;
+				buf >> v;
 
-				// 第一个值作为 ID，用于 child_frame 命名
-				if (first_value)
+				if (v < 0.0)
+					break; // ← 哨兵：到填充值就停止读取（不把 padding 推给 ROS）
+
+				if (first)
 				{
-					target_id = extractedValue;
-					first_value = false;
+					target_id = v;
+					first = false;
 				}
-
-				rabSensorData.data.push_back(extractedValue);
+				rabSensorData.data.push_back(v); // 只推有效载荷
 			}
 
-			// 创建 TransformStamped
-			geometry_msgs::msg::TransformStamped tf_msg;
-			tf_msg.header.stamp = ros_sim_time; // argos_time
-
-			std::stringstream parent_frame, child_frame;
-			parent_frame << GetId() << "/base_link";
-			if (target_id < 0)
+			if (target_id < 0.0)
 			{
-				continue;
+				continue; // 无有效 ID，跳过 TF
 			}
 
-			child_frame << "bot" << static_cast<int>(target_id) << "/base_link";
-
-			tf_msg.header.frame_id = parent_frame.str();
-			tf_msg.child_frame_id = child_frame.str();
+			geometry_msgs::msg::TransformStamped tf_msg;
+			tf_msg.header.stamp = ros_sim_time;
+			tf_msg.header.frame_id = parent_frame;
+			tf_msg.child_frame_id = "bot" + std::to_string(static_cast<int>(target_id)) + "/base_link";
 
 			tf_msg.transform.translation.x = x;
 			tf_msg.transform.translation.y = y;
 			tf_msg.transform.translation.z = z;
 
-			// 没有方向信息就设为单位四元数
 			tf_msg.transform.rotation.x = 0.0;
 			tf_msg.transform.rotation.y = 0.0;
 			tf_msg.transform.rotation.z = 0.0;
 			tf_msg.transform.rotation.w = 1.0;
 
-			transforms.push_back(tf_msg);
+			transforms.push_back(std::move(tf_msg));
+			if (transforms.size() >= MAX_TF_NEIGHBORS)
+				break; // 可选：限制 TF 数
 		}
 
 		tf2_msgs::msg::TFMessage tf_msg;
-		tf_msg.transforms = transforms;
+		tf_msg.transforms = std::move(transforms);
 
 		tfPublisher_->publish(tf_msg);
 		rabDataPublisher_->publish(rabSensorData);
@@ -349,6 +377,7 @@ void ArgosRosFootbot::ControlStep()
 		std_msgs::msg::Float64MultiArray rabSensorData;
 		rabDataPublisher_->publish(rabSensorData);
 	}
+
 	/*********************************************
 	 * receive message from ros and send it to Left-Right-wheel-Actuator
 	 *********************************************/
